@@ -1,27 +1,28 @@
-#include <esp_lcd_panel_vendor.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
+#include <esp_lcd_panel_vendor.h>
 
 #include <wifi_station.h>
-#include "wifi_board.h"
-#include "codecs/es8311_audio_codec.h"
-#include "mhaibot_display.h"
+#include "adc_battery_monitor.h"
 #include "application.h"
 #include "button.h"
+#include "codecs/es8311_audio_codec.h"
 #include "config.h"
 #include "mcp_server.h"
-#include "adc_battery_monitor.h"
+#include "mhaibot_display.h"
+#include "wifi_board.h"
 
-#include <esp_log.h>
 #include <driver/i2c_master.h>
 #include <driver/spi_common.h>
+#include <esp_log.h>
+#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <esp_timer.h>
 
-#include "led/single_led.h"
-#include "system_reset.h"
 #include "esp_lcd_ili9341.h"
+#include "led/single_led.h"
+#include "power_save_timer.h"
+#include "system_reset.h"
 
 #define TAG "FreenoveESP32S3Display"
 
@@ -38,17 +39,20 @@ public:
         return i2c_master_bus_add_device(bus, &cfg, &dev_) == ESP_OK;
     }
 
-    bool Read(bool &touched, uint16_t &x, uint16_t &y) {
+    bool Read(bool& touched, uint16_t& x, uint16_t& y) {
         touched = false;
         x = y = 0;
-        if (!dev_) return false;
+        if (!dev_)
+            return false;
 
         uint8_t reg = 0x02;
         uint8_t buf[5];
-        if (i2c_master_transmit_receive(dev_, &reg, 1, buf, 5, 50) != ESP_OK) return false;
+        if (i2c_master_transmit_receive(dev_, &reg, 1, buf, 5, 50) != ESP_OK)
+            return false;
 
         uint8_t points = buf[0] & 0x0F;
-        if (points == 0) return true;
+        if (points == 0)
+            return true;
 
         touched = true;
         x = ((buf[1] & 0x0F) << 8) | buf[2];
@@ -63,18 +67,20 @@ private:
 class FreenoveESP32S3Display : public WifiBoard {
 private:
     Button boot_button_;
-    LcdDisplay *display_;
+    LcdDisplay* display_;
     i2c_master_bus_handle_t codec_i2c_bus_;
     TouchDriver touch_;
     AdcBatteryMonitor* adc_battery_monitor_;
+    PowerSaveTimer* power_save_timer_ = nullptr;
 
     void InitializeBatteryMonitor() {
-        adc_battery_monitor_ = new AdcBatteryMonitor(ADC_UNIT_1, ADC_CHANNEL_8, 200000, 200000, GPIO_NUM_NC);
+        adc_battery_monitor_ =
+            new AdcBatteryMonitor(ADC_UNIT_1, ADC_CHANNEL_8, 200000, 200000, GPIO_NUM_NC);
     }
 
-    static void TouchTask(void *arg) {
-        auto *self = static_cast<FreenoveESP32S3Display*>(arg);
-        auto &app = Application::GetInstance();
+    static void TouchTask(void* arg) {
+        auto* self = static_cast<FreenoveESP32S3Display*>(arg);
+        auto& app = Application::GetInstance();
 
         uint32_t last_tap = 0;
         uint32_t down_start = 0;
@@ -91,6 +97,9 @@ private:
                 if (!down) {
                     down = true;
                     down_start = now;
+                    if (self->power_save_timer_ != nullptr) {
+                        self->power_save_timer_->WakeUp();
+                    }
                 }
             }
 
@@ -120,7 +129,8 @@ private:
     }
 
     void InitializeTouch() {
-        if (!touch_.Init(codec_i2c_bus_, 0x38)) return;
+        if (!touch_.Init(codec_i2c_bus_, 0x38))
+            return;
         xTaskCreatePinnedToCore(TouchTask, "touch_task", 4096, this, 5, nullptr, 0);
     }
 
@@ -133,9 +143,10 @@ private:
             .glitch_ignore_cnt = 7,
             .intr_priority = 0,
             .trans_queue_depth = 0,
-            .flags = {
-                .enable_internal_pullup = 1,
-            },
+            .flags =
+                {
+                    .enable_internal_pullup = 1,
+                },
         };
         ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_cfg, &codec_i2c_bus_));
     }
@@ -153,12 +164,28 @@ private:
 
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
-            auto &app = Application::GetInstance();
+            if (power_save_timer_ != nullptr) {
+                power_save_timer_->WakeUp();
+            }
+            auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateStarting) {
                 EnterWifiConfigMode();
             }
             app.ToggleChatState();
         });
+    }
+
+    void InitializePowerSaveTimer() {
+        // No CPU frequency scaling (-1) and no shutdown callback registered —
+        // this board has no shutdown path wired up; only the backlight sleeps
+        // after being idle (Application::CanEnterSleepMode()) for 60s.
+        power_save_timer_ = new PowerSaveTimer(-1, 60);
+        power_save_timer_->OnEnterSleepMode([this]() {
+            ESP_LOGI(TAG, "Idle timeout reached, turning off display backlight");
+            GetBacklight()->SetBrightness(0);
+        });
+        power_save_timer_->OnExitSleepMode([this]() { GetBacklight()->RestoreBrightness(); });
+        power_save_timer_->SetEnabled(true);
     }
 
     void InitializeLcdDisplay() {
@@ -190,49 +217,47 @@ private:
         esp_lcd_panel_invert_color(panel, DISPLAY_INVERT_COLOR);
         esp_lcd_panel_swap_xy(panel, DISPLAY_SWAP_XY);
         esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
-        display_ = new MhaiBotDisplay(panel_io, panel,
-            DISPLAY_WIDTH, DISPLAY_HEIGHT,
-            DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y,
-            DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
+        display_ = new MhaiBotDisplay(panel_io, panel, DISPLAY_WIDTH, DISPLAY_HEIGHT,
+                                      DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X,
+                                      DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
     }
 
-    void InitializeTools() {
-    }
+    void InitializeTools() {}
 
 public:
-    FreenoveESP32S3Display(): boot_button_(BOOT_BUTTON_GPIO)
-    {
+    FreenoveESP32S3Display() : boot_button_(BOOT_BUTTON_GPIO) {
         InitializeI2c();
         InitializeBatteryMonitor();
         InitializeSpi();
         InitializeLcdDisplay();
+        InitializePowerSaveTimer();
         InitializeTouch();
         InitializeButtons();
         InitializeTools();
         GetBacklight()->SetBrightness(100);
     }
 
-    virtual Led *GetLed() override {
+    virtual Led* GetLed() override {
         static SingleLed led(BUILTIN_LED_GPIO);
         return &led;
     }
 
     virtual AudioCodec* GetAudioCodec() override {
-        static Es8311AudioCodec audio_codec(codec_i2c_bus_, AUDIO_CODEC_I2C_NUM,
-            AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE, AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK,
-            AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN, AUDIO_CODEC_PA_PIN,
-            AUDIO_CODEC_ES8311_ADDR, true, true);
+        static Es8311AudioCodec audio_codec(
+            codec_i2c_bus_, AUDIO_CODEC_I2C_NUM, AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
+            AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT,
+            AUDIO_I2S_GPIO_DIN, AUDIO_CODEC_PA_PIN, AUDIO_CODEC_ES8311_ADDR, true, true);
         return &audio_codec;
     }
 
-    virtual Display *GetDisplay() override { return display_; }
+    virtual Display* GetDisplay() override { return display_; }
 
-    virtual Backlight *GetBacklight() override {
+    virtual Backlight* GetBacklight() override {
         static PwmBacklight backlight(DISPLAY_BACKLIGHT_PIN, DISPLAY_BACKLIGHT_OUTPUT_INVERT);
         return &backlight;
     }
 
-    virtual bool GetBatteryLevel(int &level, bool& charging, bool& discharging) override {
+    virtual bool GetBatteryLevel(int& level, bool& charging, bool& discharging) override {
         charging = adc_battery_monitor_->IsCharging();
         discharging = adc_battery_monitor_->IsDischarging();
         level = adc_battery_monitor_->GetBatteryLevel();
