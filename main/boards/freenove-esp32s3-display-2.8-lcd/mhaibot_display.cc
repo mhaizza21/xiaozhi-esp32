@@ -13,8 +13,30 @@ namespace {
 // else — the named MhaiBot face emotions and any unrecognized string — keeps
 // the face on screen.
 constexpr const char* kLegacyEmotions[] = {
-    "warning", "error", "sad", "angry", "surprised", "cancel",
+    "warning", "error", "sad", "crying", "angry", "surprised", "shocked", "cancel",
 };
+
+const char* FaceEmotionName(MhaiBotFace::Emotion emotion) {
+    switch (emotion) {
+        case MhaiBotFace::Emotion::kNeutral:
+            return "neutral";
+        case MhaiBotFace::Emotion::kRobot2:
+            return "robot_2";
+        case MhaiBotFace::Emotion::kHappy:
+            return "happy";
+        case MhaiBotFace::Emotion::kThinking:
+            return "thinking";
+        case MhaiBotFace::Emotion::kSpeaking:
+            return "speaking";
+        case MhaiBotFace::Emotion::kListening:
+            return "listening";
+        case MhaiBotFace::Emotion::kRelaxed:
+            return "relaxed";
+        case MhaiBotFace::Emotion::kConfident:
+            return "confident";
+    }
+    return "unknown";
+}
 }  // namespace
 
 MhaiBotDisplay::MhaiBotDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
@@ -52,7 +74,17 @@ MhaiBotFace::Emotion MhaiBotDisplay::ToFaceEmotion(const char* emotion) {
     if (strcmp(emotion, "happy") == 0) {
         return MhaiBotFace::Emotion::kHappy;
     }
+    // "laughing" reuses the Happy geometry for now; give it its own Emotion
+    // value only if it later needs a visually distinct expression.
+    if (strcmp(emotion, "laughing") == 0) {
+        return MhaiBotFace::Emotion::kHappy;
+    }
     if (strcmp(emotion, "thinking") == 0) {
+        return MhaiBotFace::Emotion::kThinking;
+    }
+    // "confused" reuses the Thinking geometry/glance for now; give it its own
+    // Emotion value only if it later needs a visually distinct expression.
+    if (strcmp(emotion, "confused") == 0) {
         return MhaiBotFace::Emotion::kThinking;
     }
     if (strcmp(emotion, "speaking") == 0) {
@@ -76,7 +108,8 @@ void MhaiBotDisplay::LogUnknownEmotionOnce(const char* emotion) {
         return;
     }
     static constexpr const char* kKnownFaceEmotions[] = {
-        "neutral", "robot_2", "happy", "thinking", "speaking", "listening", "relaxed", "confident",
+        "neutral", "robot_2", "happy", "laughing", "thinking", "confused",
+        "speaking", "listening", "relaxed", "confident",
     };
     for (const char* known : kKnownFaceEmotions) {
         if (strcmp(emotion, known) == 0) {
@@ -86,6 +119,16 @@ void MhaiBotDisplay::LogUnknownEmotionOnce(const char* emotion) {
     if (logged_unknown_emotions_.insert(emotion).second) {
         ESP_LOGW(TAG, "Unknown emotion '%s', defaulting to MhaiBot face", emotion);
     }
+}
+
+void MhaiBotDisplay::LogEmotionTransition(const char* emotion, MhaiBotFace::Emotion mapped) {
+    const std::string raw = emotion != nullptr ? emotion : "(null)";
+    if (has_logged_emotion_ && raw == last_logged_emotion_) {
+        return;
+    }
+    has_logged_emotion_ = true;
+    last_logged_emotion_ = raw;
+    ESP_LOGI(TAG, "Emotion '%s' -> face:%s", raw.c_str(), FaceEmotionName(mapped));
 }
 
 void MhaiBotDisplay::ApplyFaceVisibility() {
@@ -126,6 +169,8 @@ void MhaiBotDisplay::SetupUI() {
 }
 
 void MhaiBotDisplay::SetEmotion(const char* emotion) {
+    LogEmotionTransition(emotion, ToFaceEmotion(emotion));
+
     if (face_ == nullptr) {
         SpiLcdDisplay::SetEmotion(emotion);
         return;

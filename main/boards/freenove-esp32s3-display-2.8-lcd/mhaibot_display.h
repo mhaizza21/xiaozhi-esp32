@@ -30,11 +30,14 @@ private:
     static bool IsLegacyEmotion(const char* emotion);
     static MhaiBotFace::Emotion ToFaceEmotion(const char* emotion);
     void LogUnknownEmotionOnce(const char* emotion);
+    void LogEmotionTransition(const char* emotion, MhaiBotFace::Emotion mapped);
     void ApplyFaceVisibility();
 
     std::unique_ptr<MhaiBotFace> face_;
     bool face_visible_ = true;
     std::unordered_set<std::string> logged_unknown_emotions_;
+    std::string last_logged_emotion_;
+    bool has_logged_emotion_ = false;
 };
 
 #endif  // MHAIBOT_DISPLAY_H
