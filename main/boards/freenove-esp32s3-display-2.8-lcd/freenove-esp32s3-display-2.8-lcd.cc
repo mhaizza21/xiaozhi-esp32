@@ -10,6 +10,7 @@
 #include "config.h"
 #include "mcp_server.h"
 #include "mhaibot_display.h"
+#include "mhaibot_interaction_model.h"
 #include "wifi_board.h"
 
 #include <driver/i2c_master.h>
@@ -24,7 +25,26 @@
 #include "power_save_timer.h"
 #include "system_reset.h"
 
+#include <atomic>
+
 #define TAG "FreenoveESP32S3Display"
+
+class MhaiBotBacklight : public PwmBacklight {
+public:
+    MhaiBotBacklight(gpio_num_t pin, bool output_invert) : PwmBacklight(pin, output_invert) {}
+
+    void SetBrightnessImmediate(uint8_t brightness) {
+        if (brightness > 100) {
+            brightness = 100;
+        }
+        if (transition_timer_ != nullptr) {
+            esp_timer_stop(transition_timer_);
+        }
+        brightness_ = brightness;
+        target_brightness_ = brightness;
+        SetBrightnessImpl(brightness);
+    }
+};
 
 class TouchDriver {
 public:
@@ -67,11 +87,23 @@ private:
 class FreenoveESP32S3Display : public WifiBoard {
 private:
     Button boot_button_;
-    LcdDisplay* display_;
+    MhaiBotDisplay* display_;
     i2c_master_bus_handle_t codec_i2c_bus_;
     TouchDriver touch_;
+    MhaiBotPetGestureDetector pet_gesture_;
     AdcBatteryMonitor* adc_battery_monitor_;
     PowerSaveTimer* power_save_timer_ = nullptr;
+    std::atomic<bool> screen_off_{false};
+    std::atomic<bool> shutdown_applied_{false};
+    std::atomic<bool> touch_wake_pending_{false};
+    std::atomic<bool> suppress_touch_release_{false};
+    std::atomic<bool> groggy_wake_active_{false};
+    std::atomic<uint32_t> groggy_wake_started_ms_{0};
+    std::atomic<uint32_t> next_groggy_brightness_update_ms_{0};
+    std::atomic<uint32_t> sleep_generation_{0};
+    std::atomic<uint8_t> groggy_target_brightness_{75};
+    std::atomic<uint8_t> pre_sleep_brightness_{100};
+    std::atomic<bool> sleeping_face_active_{false};
 
     void InitializeBatteryMonitor() {
         adc_battery_monitor_ =
@@ -93,38 +125,132 @@ private:
 
             uint32_t now = esp_timer_get_time() / 1000;
 
+            if (self->groggy_wake_active_.load() &&
+                now >= self->next_groggy_brightness_update_ms_.load()) {
+                self->next_groggy_brightness_update_ms_.store(now + 100);
+                app.Schedule([self, now]() { self->UpdateGroggyWake(now); });
+            }
+
+            if (!self->screen_off_.load() && !self->sleeping_face_active_.load() &&
+                !self->groggy_wake_active_.load()) {
+                if (self->pet_gesture_.Update(t, x, y, now)) {
+                    app.Schedule([self]() { self->display_->StartPetting(); });
+                    self->suppress_touch_release_.store(true);
+                }
+            }
+
             if (t) {
                 if (!down) {
                     down = true;
                     down_start = now;
                     if (self->power_save_timer_ != nullptr) {
-                        self->power_save_timer_->WakeUp();
+                        if (self->screen_off_.load()) {
+                            self->touch_wake_pending_.store(true);
+                            self->suppress_touch_release_.store(true);
+                            self->power_save_timer_->WakeUp();
+                        } else if (self->groggy_wake_active_.load()) {
+                            self->suppress_touch_release_.store(true);
+                        } else {
+                            self->power_save_timer_->WakeUp();
+                        }
                     }
                 }
             }
 
             if (!t && down) {
                 down = false;
+                if (self->suppress_touch_release_.exchange(false)) {
+                    last_tap = 0;
+                    continue;
+                }
 
                 uint32_t press = now - down_start;
 
                 // long tap
                 if (press > 3000) {
-                    self->EnterWifiConfigMode();
+                    app.Schedule([self]() { self->EnterWifiConfigMode(); });
                 } else {
                     // double tap
                     if (now - last_tap < 250) {
-                        app.StartListening();
+                        app.Schedule([]() { Application::GetInstance().StartListening(); });
                         last_tap = 0;
                     } else {
                         // single tap
-                        app.ToggleChatState();
+                        app.Schedule([]() { Application::GetInstance().ToggleChatState(); });
                         last_tap = now;
                     }
                 }
             }
 
             vTaskDelay(pdMS_TO_TICKS(50));
+        }
+    }
+
+    void ApplyScreenOff() {
+        if (shutdown_applied_.exchange(true)) {
+            return;
+        }
+        screen_off_.store(true);
+        sleeping_face_active_.store(false);
+        groggy_wake_active_.store(false);
+        display_->CancelTransientAnimation();
+        GetBacklight()->SetBrightness(0);
+        display_->SetPanelPowered(false);
+    }
+
+    void StartGroggyWake(uint32_t now_ms) {
+        shutdown_applied_.store(false);
+        screen_off_.store(false);
+        sleeping_face_active_.store(false);
+        groggy_wake_active_.store(true);
+        groggy_wake_started_ms_.store(now_ms);
+        next_groggy_brightness_update_ms_.store(now_ms + 100);
+        groggy_target_brightness_.store(pre_sleep_brightness_.load());
+        display_->SetPanelPowered(true);
+        display_->StartGroggyWake();
+        GetMhaiBotBacklight()->SetBrightnessImmediate(
+            MhaiBotGroggyBrightness(0, groggy_target_brightness_.load()));
+    }
+
+    bool CancelGroggyWake() {
+        const bool was_groggy = groggy_wake_active_.exchange(false);
+        if (was_groggy) {
+            display_->CancelTransientAnimation();
+            GetBacklight()->RestoreBrightness();
+        }
+        return was_groggy;
+    }
+
+    void UpdateGroggyWake(uint32_t now_ms) {
+        if (!groggy_wake_active_.load()) {
+            return;
+        }
+        const uint32_t elapsed_ms = now_ms - groggy_wake_started_ms_.load();
+        if (elapsed_ms >= MhaiBotGroggyWakeDurationMs()) {
+            groggy_wake_active_.store(false);
+            GetBacklight()->RestoreBrightness();
+            display_->SetEmotion("neutral");
+            return;
+        }
+        GetMhaiBotBacklight()->SetBrightnessImmediate(
+            MhaiBotGroggyBrightness(elapsed_ms, groggy_target_brightness_.load()));
+    }
+
+    void WakeFromNonTouchInput() {
+        sleep_generation_.fetch_add(1);
+        touch_wake_pending_.store(false);
+        shutdown_applied_.store(false);
+        const bool was_screen_off = screen_off_.exchange(false);
+        const bool was_sleeping = sleeping_face_active_.exchange(false);
+        if (was_screen_off) {
+            display_->SetPanelPowered(true);
+        }
+        if (!CancelGroggyWake() && (was_screen_off || was_sleeping)) {
+            GetBacklight()->RestoreBrightness();
+            display_->SetEmotion("neutral");
+        }
+        if (power_save_timer_ != nullptr) {
+            power_save_timer_->WakeUp();
         }
     }
 
@@ -164,27 +290,53 @@ private:
 
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
-            if (power_save_timer_ != nullptr) {
-                power_save_timer_->WakeUp();
-            }
-            auto& app = Application::GetInstance();
-            if (app.GetDeviceState() == kDeviceStateStarting) {
-                EnterWifiConfigMode();
-            }
-            app.ToggleChatState();
+            Application::GetInstance().Schedule([this]() {
+                WakeFromNonTouchInput();
+                auto& app = Application::GetInstance();
+                if (app.GetDeviceState() == kDeviceStateStarting) {
+                    EnterWifiConfigMode();
+                }
+                app.ToggleChatState();
+            });
         });
     }
 
     void InitializePowerSaveTimer() {
-        // No CPU frequency scaling (-1) and no shutdown callback registered —
-        // this board has no shutdown path wired up; only the backlight sleeps
-        // after being idle (Application::CanEnterSleepMode()) for 60s.
-        power_save_timer_ = new PowerSaveTimer(-1, 60);
+        // Keep CPU/audio behavior unchanged. The board-local display first
+        // shows sleeping eyes, then powers the panel off after 30 more minutes.
+        power_save_timer_ =
+            new PowerSaveTimer(-1, MhaiBotIdleSleepTimeoutSeconds(), MhaiBotScreenOffIdleSeconds());
         power_save_timer_->OnEnterSleepMode([this]() {
-            ESP_LOGI(TAG, "Idle timeout reached, turning off display backlight");
-            GetBacklight()->SetBrightness(0);
+            Application::GetInstance().Schedule([this]() {
+                ESP_LOGI(TAG, "Idle timeout reached, entering MhaiBot sleep face");
+                sleep_generation_.fetch_add(1);
+                pre_sleep_brightness_.store(GetBacklight()->brightness());
+                sleeping_face_active_.store(true);
+                display_->CancelTransientAnimation();
+                display_->SetEmotion("sleeping");
+                GetBacklight()->SetBrightness(8);
+            });
         });
-        power_save_timer_->OnExitSleepMode([this]() { GetBacklight()->RestoreBrightness(); });
+        power_save_timer_->OnExitSleepMode([this]() {
+            const bool touch_wake = touch_wake_pending_.exchange(false);
+            const uint32_t now_ms = esp_timer_get_time() / 1000;
+            Application::GetInstance().Schedule([this, touch_wake, now_ms]() {
+                if (touch_wake) {
+                    StartGroggyWake(now_ms);
+                    return;
+                }
+                WakeFromNonTouchInput();
+            });
+        });
+        power_save_timer_->OnShutdownRequest([this]() {
+            const uint32_t requested_generation = sleep_generation_.load();
+            Application::GetInstance().Schedule([this, requested_generation]() {
+                if (requested_generation == sleep_generation_.load() &&
+                    sleeping_face_active_.load()) {
+                    ApplyScreenOff();
+                }
+            });
+        });
         power_save_timer_->SetEnabled(true);
     }
 
@@ -253,8 +405,19 @@ public:
     virtual Display* GetDisplay() override { return display_; }
 
     virtual Backlight* GetBacklight() override {
-        static PwmBacklight backlight(DISPLAY_BACKLIGHT_PIN, DISPLAY_BACKLIGHT_OUTPUT_INVERT);
+        static MhaiBotBacklight backlight(DISPLAY_BACKLIGHT_PIN, DISPLAY_BACKLIGHT_OUTPUT_INVERT);
         return &backlight;
+    }
+
+    MhaiBotBacklight* GetMhaiBotBacklight() {
+        return static_cast<MhaiBotBacklight*>(GetBacklight());
+    }
+
+    virtual void SetPowerSaveLevel(PowerSaveLevel level) override {
+        if (level != PowerSaveLevel::LOW_POWER) {
+            Application::GetInstance().Schedule([this]() { WakeFromNonTouchInput(); });
+        }
+        WifiBoard::SetPowerSaveLevel(level);
     }
 
     virtual bool GetBatteryLevel(int& level, bool& charging, bool& discharging) override {

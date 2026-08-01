@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 BOARD_DIR = ROOT / "main" / "boards" / "freenove-esp32s3-display-2.8-lcd"
+BOARD_SOURCE = BOARD_DIR / "freenove-esp32s3-display-2.8-lcd.cc"
 MODEL_SOURCE = BOARD_DIR / "mhaibot_interaction_model.cc"
 DISPLAY_HEADER = BOARD_DIR / "mhaibot_display.h"
 DISPLAY_SOURCE = BOARD_DIR / "mhaibot_display.cc"
@@ -30,6 +31,101 @@ def find_cxx_compiler():
 
 
 class MhaiBotFaceModelTest(unittest.TestCase):
+    def test_board_touch_sleep_and_groggy_wake_contract(self):
+        source = BOARD_SOURCE.read_text(encoding="utf-8")
+        touch_task_body = method_body(source, "static void TouchTask(void* arg)")
+        power_body = method_body(source, "void InitializePowerSaveTimer()")
+        shutdown_body = method_body(source, "void ApplyScreenOff()")
+        groggy_body = method_body(source, "void StartGroggyWake(uint32_t now_ms)")
+        cancel_body = method_body(source, "bool CancelGroggyWake()")
+        non_touch_body = method_body(source, "void WakeFromNonTouchInput()")
+        update_groggy_body = method_body(source, "void UpdateGroggyWake(uint32_t now_ms)")
+        power_level_body = method_body(source, "virtual void SetPowerSaveLevel(PowerSaveLevel level) override")
+
+        self.assertIn('#include "mhaibot_interaction_model.h"', source)
+        self.assertIn("#include <atomic>", source)
+        self.assertIn("MhaiBotDisplay* display_;", source)
+        self.assertIn("MhaiBotPetGestureDetector pet_gesture_;", source)
+        self.assertIn("std::atomic<bool> suppress_touch_release_{false};", source)
+        self.assertIn("std::atomic<bool> sleeping_face_active_{false};", source)
+        self.assertIn("std::atomic<uint32_t> next_groggy_brightness_update_ms_{0};", source)
+        self.assertIn("std::atomic<uint32_t> sleep_generation_{0};", source)
+        self.assertIn("class MhaiBotBacklight : public PwmBacklight", source)
+        self.assertIn("void SetBrightnessImmediate(uint8_t brightness)", source)
+        self.assertEqual(source.count("TouchTask"), 2)
+        self.assertEqual(source.count("xTaskCreatePinnedToCore(TouchTask"), 1)
+        self.assertNotIn("xTaskCreatePinnedToCore", source.replace("xTaskCreatePinnedToCore(TouchTask", ""))
+        self.assertIn("new PowerSaveTimer(", power_body)
+        self.assertIn("-1, MhaiBotIdleSleepTimeoutSeconds(), MhaiBotScreenOffIdleSeconds()", power_body)
+        self.assertIn("Application::GetInstance().Schedule([this]()", power_body)
+        self.assertIn("power_save_timer_->OnShutdownRequest(", power_body)
+        self.assertIn("const uint32_t requested_generation = sleep_generation_.load();", power_body)
+        self.assertIn("requested_generation == sleep_generation_.load()", power_body)
+        self.assertIn("sleeping_face_active_.load()", power_body)
+        self.assertIn("ApplyScreenOff();", power_body)
+        self.assertIn("sleep_generation_.fetch_add(1);", power_body)
+        self.assertIn("pre_sleep_brightness_.store(GetBacklight()->brightness());", power_body)
+
+        self.assertIn("!self->screen_off_.load() && !self->sleeping_face_active_.load()", touch_task_body)
+        self.assertIn("!self->groggy_wake_active_.load()", touch_task_body)
+        self.assertIn("pet_gesture_.Update(t, x, y, now)", touch_task_body)
+        self.assertIn("app.Schedule([self]() { self->display_->StartPetting(); });", touch_task_body)
+        self.assertIn("suppress_touch_release_.store(true);", touch_task_body)
+        self.assertIn("if (self->screen_off_.load())", touch_task_body)
+        self.assertIn("touch_wake_pending_.store(true);", touch_task_body)
+        self.assertIn("power_save_timer_->WakeUp();", touch_task_body)
+        self.assertIn("self->power_save_timer_->WakeUp();", touch_task_body)
+        self.assertIn("app.Schedule([self, now]() { self->UpdateGroggyWake(now); });", touch_task_body)
+        self.assertIn("else if (self->groggy_wake_active_.load())", touch_task_body)
+        self.assertIn("suppress_touch_release_.exchange(false)", touch_task_body)
+        self.assertIn("app.Schedule([self]() { self->EnterWifiConfigMode(); });", touch_task_body)
+        self.assertIn("Application::GetInstance().StartListening();", touch_task_body)
+        self.assertIn("Application::GetInstance().ToggleChatState();", touch_task_body)
+        self.assertNotIn("app.StartListening();", touch_task_body)
+        self.assertNotIn("app.ToggleChatState();", touch_task_body)
+        self.assertIn("vTaskDelay(pdMS_TO_TICKS(50));", touch_task_body)
+        self.assertNotIn("vTaskDelay", source.replace("vTaskDelay(pdMS_TO_TICKS(50));", ""))
+
+        release_guard = touch_task_body.index("if (self->suppress_touch_release_.exchange(false))")
+        for later_action in (
+            "self->EnterWifiConfigMode();",
+            "Application::GetInstance().StartListening();",
+            "Application::GetInstance().ToggleChatState();",
+        ):
+            self.assertLess(release_guard, touch_task_body.index(later_action))
+
+        self.assertIn("if (shutdown_applied_.exchange(true))", shutdown_body)
+        self.assertIn("sleeping_face_active_.store(false);", shutdown_body)
+        self.assertIn("display_->CancelTransientAnimation();", shutdown_body)
+        self.assertIn("GetBacklight()->SetBrightness(0);", shutdown_body)
+        self.assertIn("display_->SetPanelPowered(false);", shutdown_body)
+        self.assertIn("sleeping_face_active_.store(false);", groggy_body)
+        self.assertIn("display_->SetPanelPowered(true);", groggy_body)
+        self.assertIn("display_->StartGroggyWake();", groggy_body)
+        self.assertIn("next_groggy_brightness_update_ms_.store(now_ms + 100);", groggy_body)
+        self.assertIn("GetMhaiBotBacklight()->SetBrightnessImmediate", groggy_body)
+        self.assertIn("MhaiBotGroggyBrightness(0, groggy_target_brightness_.load())", groggy_body)
+        self.assertNotIn("next_groggy_brightness_update_ms_.store", update_groggy_body)
+        self.assertIn("GetMhaiBotBacklight()->SetBrightnessImmediate", update_groggy_body)
+        self.assertIn('display_->SetEmotion("neutral");', update_groggy_body)
+        self.assertIn("groggy_wake_active_.exchange(false)", cancel_body)
+        self.assertNotIn("IsGroggyWakeActive", cancel_body)
+        self.assertIn("display_->CancelTransientAnimation();", cancel_body)
+        self.assertIn("GetBacklight()->RestoreBrightness();", cancel_body)
+        self.assertIn("return was_groggy;", cancel_body)
+        self.assertIn("sleeping_face_active_.exchange(false)", non_touch_body)
+        self.assertIn("sleep_generation_.fetch_add(1);", non_touch_body)
+        self.assertIn("display_->SetPanelPowered(true);", non_touch_body)
+        self.assertIn("if (!CancelGroggyWake() && (was_screen_off || was_sleeping))", non_touch_body)
+        self.assertIn("if (level != PowerSaveLevel::LOW_POWER)", power_level_body)
+        self.assertIn("Application::GetInstance().Schedule([this]()", power_level_body)
+        self.assertIn("WakeFromNonTouchInput();", power_level_body)
+        self.assertIn("WifiBoard::SetPowerSaveLevel(level);", power_level_body)
+
+        forbidden = ("MQTT", "WEBSOCKET", "sdkconfig", "Protocol")
+        for token in forbidden:
+            self.assertNotIn(token, source)
+
     def test_face_v2_transient_renderer_contract(self):
         header = FACE_V2_HEADER.read_text(encoding="utf-8")
         source = FACE_V2_SOURCE.read_text(encoding="utf-8")
