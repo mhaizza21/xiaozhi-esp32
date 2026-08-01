@@ -23,3 +23,27 @@
   - The restored plan was moved from docs/ to docs/plans/ so the requested plan path and ledger first line match.
   - Reviewers found the first saved patch was malformed by PowerShell line handling; it was regenerated as a line-delimited patch and verified against the intended parent commit.
 
+## Task 2: Pure interaction rules and timing model
+
+- Status: completed
+- Started: 2026-08-02
+- Completed: 2026-08-02
+- Commit: 60d0ccc
+- Implementation agent: 019fbf29-ed55-7520-a210-9c73b2f37e5c
+- Spec reviewers:
+  - 019fbf2f-8e16-7ad2-92f1-08cb29522661 found skipped C++ runtime assertions were load-bearing.
+  - 019fbf32-7a3b-7111-816f-f4c53ec76d3b approved after non-skipped spec/source checks were added.
+- Code-quality reviewers:
+  - 019fbf2f-a6ad-7a10-a520-3bb2d9f62722 reviewed the wrong checkout; result ignored.
+  - 019fbf30-c38b-7250-921f-30dc3830f2dd approved the scoped model patch.
+  - 019fbf32-90ec-7933-87ad-8b2b6e807fc0 requested clearer validation labeling.
+  - 019fbf35-1804-7490-a370-a752bd345cc7 approved the corrected validation labels.
+- Validation:
+  - python -m unittest scripts.tests.test_mhaibot_face_model -v
+  - python -m unittest discover -s scripts/tests -p 'test_*.py' -v
+  - git diff --cached --check
+- Validation notes:
+  - ESP-IDF esp-clang compiled both C++ translation units with -Wall -Wextra -Werror.
+  - Windows Application Control blocked ld.lld, so linked C++ runtime assertions were explicitly skipped locally.
+  - Non-skipped Python spec/source-contract checks cover the required constants, timing, alert priority, and gesture examples without claiming to execute the C++ runtime.
+
