@@ -112,9 +112,9 @@ void MhaiBotFace::CreateFace(lv_obj_t* parent, lv_color_t eye_color) {
     const int mouth_box = config_.mouth_radius * 2;
     lv_obj_set_size(mouth_, mouth_box, mouth_box);
     ConfigureFaceArc(mouth_, eye_color, config_.mouth_arc_width);
-    lv_arc_set_angles(mouth_, 90 - config_.mouth_half_span_deg, 90 + config_.mouth_half_span_deg);
     lv_obj_align(mouth_, LV_ALIGN_TOP_MID, 0,
                  config_.canvas_margin_y + eye_box + config_.mouth_gap);
+    ApplyMouthGeometry(emotion_);
 }
 
 void MhaiBotFace::Show() {
@@ -179,6 +179,7 @@ void MhaiBotFace::SetEmotion(Emotion emotion) {
     } else {
         CloseEyes();
     }
+    ApplyMouthGeometry(emotion_);
 
     if (previous == Emotion::kSpeaking && emotion_ != Emotion::kSpeaking) {
         pulse_phase_ = PulsePhase::Up;
@@ -290,6 +291,25 @@ MhaiBotFace::EyeGeometry MhaiBotFace::GetOpenGeometryForEmotion(Emotion emotion)
             return {config_.eye_open_span_deg, config_.eye_radius_px, base_x_offset_,
                     base_x_offset_ + config_.eye_radius_px * 2 + config_.eye_gap};
     }
+}
+
+int MhaiBotFace::GetMouthHalfSpanForEmotion(Emotion emotion) const {
+    switch (emotion) {
+        case Emotion::kHappy:
+            return config_.mouth_happy_half_span_deg;
+        default:
+            // Flat/neutral resting mouth for every other emotion, including
+            // unmapped ones — only Happy should read as smiling.
+            return config_.mouth_neutral_half_span_deg;
+    }
+}
+
+void MhaiBotFace::ApplyMouthGeometry(Emotion emotion) {
+    if (mouth_ == nullptr || !lv_obj_is_valid(mouth_)) {
+        return;
+    }
+    const int half_span = GetMouthHalfSpanForEmotion(emotion);
+    lv_arc_set_angles(mouth_, 90 - half_span, 90 + half_span);
 }
 
 void MhaiBotFace::OpenEyes() {

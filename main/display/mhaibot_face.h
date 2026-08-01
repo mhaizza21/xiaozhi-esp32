@@ -41,7 +41,9 @@ public:
         int speaking_pulse_span_delta_deg = 10;
 
         int mouth_radius = 46;
-        int mouth_half_span_deg = 34;
+        // Near-flat resting mouth; only Happy curves it into a smile.
+        int mouth_neutral_half_span_deg = 8;
+        int mouth_happy_half_span_deg = 34;
         int mouth_arc_width = 10;
         int mouth_gap = 12;
     };
@@ -49,7 +51,8 @@ public:
     // Emotions the face can represent. Neutral/Happy/Thinking/Listening/
     // Speaking each render distinct eye geometry; kRobot2/kRelaxed/
     // kConfident fall back to the neutral shape until a future version
-    // defines them. The mouth stays a constant smile across all emotions.
+    // defines them. The mouth stays flat/neutral except for Happy, which
+    // curves it into a smile.
     enum class Emotion {
         kNeutral,
         kRobot2,
@@ -97,6 +100,8 @@ private:
     void CloseEyes();
     void ApplyGeometry(const EyeGeometry& geometry);
     EyeGeometry GetOpenGeometryForEmotion(Emotion emotion) const;
+    void ApplyMouthGeometry(Emotion emotion);
+    int GetMouthHalfSpanForEmotion(Emotion emotion) const;
     uint32_t RandomIntervalMs(uint32_t min_ms, uint32_t max_ms) const;
     static void BlinkTimerCb(lv_timer_t* timer);
     static void SpeakingPulseTimerCb(lv_timer_t* timer);
