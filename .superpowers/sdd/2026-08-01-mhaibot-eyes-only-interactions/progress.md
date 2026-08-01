@@ -94,3 +94,32 @@
   - Focused and full Python suites passed with one explicit local skip for C++ runtime assertions because Windows Application Control blocks host ld.lld.
   - Shared main/display/mhaibot_face.* was not modified for this task; the Freenove board now uses board-local MhaiBotFaceV2.
 
+## Task 5: Touch routing, 40-minute screen-off, and five-second wake
+
+- Status: completed
+- Started: 2026-08-02
+- Completed: 2026-08-02
+- Commit: 1c190a5
+- Implementation agent: 019fbf60-a2dc-75f0-9b36-8d31d6d10e2c
+- Spec reviewers:
+  - 019fbf65-bca1-79b0-a002-fb4cf86b50b9 approved the initial scoped behavior.
+  - 019fbf70-1c11-76b2-bbd4-49988e4d1dd6 found petting was still possible during first-stage sleep and screen-off did not cancel transients.
+  - 019fbf73-5e04-7443-88c9-1dd60161a8ad approved after sleeping_face_active_ gating and ApplyScreenOff transient cancellation.
+  - 019fbf77-3a66-73a2-a65b-6ab77d8c3f91 approved after the stale-shutdown generation guard.
+- Code-quality reviewers:
+  - 019fbf65-d057-7e52-8c6a-ac6ceff06502 found backlight ramp reentry, cross-context state races, and direct long-touch Wi-Fi config mutation.
+  - 019fbf6b-96a2-7db1-8b40-a4fd7142f9cb found remaining cross-task backlight/display ownership hazards.
+  - 019fbf70-3270-7000-8194-a1cc3e67847b found dim-sleep wake did not restore and the ramp still used shared Backlight transitions.
+  - 019fbf73-76a0-7693-bfeb-7fe5ddd482b7 found stale scheduled shutdown could blank after wake.
+  - 019fbf77-52d5-74d1-aebd-4985de288fa3 approved after Application::Schedule ownership, MhaiBotBacklight immediate ramp, atomic flags, dim-sleep restore, and sleep_generation_ guard.
+- Validation:
+  - C:/Espressif/tools/esp-clang/esp-20.1.1_20250829/esp-clang/bin/clang-format.exe -i main/boards/freenove-esp32s3-display-2.8-lcd/freenove-esp32s3-display-2.8-lcd.cc
+  - python -m unittest scripts.tests.test_mhaibot_face_model -v
+  - python -m unittest discover -s scripts/tests -p 'test_*.py' -v
+  - git diff --check
+- Validation notes:
+  - Focused and full Python suites passed with one explicit local skip for C++ runtime assertions because Windows Application Control blocks host ld.lld.
+  - git diff --check passed; Git reported only the existing LF-to-CRLF warning for scripts/tests/test_mhaibot_face_model.py.
+  - No audio, microphone, Wi-Fi, protocol, GPIO, sdkconfig, camera, or unrelated board files changed.
+  - Hardware validation remains required for physical touch, panel power, and backlight timing.
+
