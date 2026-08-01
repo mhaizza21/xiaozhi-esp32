@@ -47,3 +47,29 @@
   - Windows Application Control blocked ld.lld, so linked C++ runtime assertions were explicitly skipped locally.
   - Non-skipped Python spec/source-contract checks cover the required constants, timing, alert priority, and gesture examples without claiming to execute the C++ runtime.
 
+## Task 3: Eyes-only chrome and minimal alert lifecycle
+
+- Status: completed
+- Started: 2026-08-02
+- Completed: 2026-08-02
+- Commit: 0a0e718
+- Implementation agent: 019fbf36-d105-7de3-b5ed-945f27fd64fb
+- Spec reviewers:
+  - 019fbf3a-56d6-7072-81b6-7128b1f14b80 found the staged kLegacyEmotions compile break.
+  - 019fbf3e-dc62-73a0-8516-54b32017605b found the localized Alert/Lang::Strings::ERROR lifecycle gap.
+  - 019fbf3d-0ce5-7e21-951b-7506f6a45f25 approved the IsLegacyEmotion fix.
+- Code-quality reviewers:
+  - 019fbf3a-6e92-78d1-9451-128afa55b7b4 found the same staged kLegacyEmotions compile break.
+  - 019fbf3e-f465-7ad3-af9b-2e8cfcd94382 found the same localized Alert lifecycle gap.
+  - 019fbf41-e595-70f2-8e99-95a5844997a0 approved the localized alert lifecycle fix.
+- Validation:
+  - python -m unittest scripts.tests.test_mhaibot_face_model -v
+  - python -m unittest discover -s scripts/tests -p 'test_*.py' -v
+  - git diff --cached --check
+  - python scripts/release.py freenove-esp32s3-display-2.8-lcd --name freenove-esp32s3-display-2.8-lcd
+- Validation notes:
+  - Focused and full Python suites passed with one explicit local skip for C++ runtime assertions because Windows Application Control blocks host ld.lld.
+  - The release build failed in the OneDrive worktree during component-manager copy into managed_components before project C++ compile.
+  - The same ESP-IDF v6.0.2 release build passed from a short detached validation worktree at C:/xmbot-v2-build for commit 0a0e718.
+  - Firmware artifact from this validation build: C:/xmbot-v2-build/build/merged-binary.bin.
+
