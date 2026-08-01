@@ -9,10 +9,9 @@
 #include <unordered_set>
 
 /**
- * Freenove board-local LcdDisplay subclass that shows a MhaiBot face for
- * normal conversation states (including unrecognized/unknown emotions) and
- * falls back to the stock emoji only for the legacy exceptional-state set
- * (warning, error, sad, angry, surprised, cancel).
+ * Freenove board-local LcdDisplay subclass that keeps the display in an
+ * eyes-only MhaiBot face mode and routes status/notification/chat lifecycle
+ * updates away from the inherited chrome.
  */
 class MhaiBotDisplay : public SpiLcdDisplay {
 public:
@@ -25,6 +24,16 @@ public:
     void SetEmotion(const char* emotion) override;
     void SetPreviewImage(std::unique_ptr<LvglImage> image) override;
     void SetTheme(Theme* theme) override;
+    void SetStatus(const char* status) override;
+    void ShowNotification(const char* notification, int duration_ms = 3000) override;
+    void ShowNotification(const std::string& notification, int duration_ms = 3000) override;
+    void SetChatMessage(const char* role, const char* content) override;
+    void ClearChatMessages() override;
+    void UpdateStatusBar(bool update_all = false) override;
+    bool SetPanelPowered(bool powered);
+    void StartPetting();
+    void StartGroggyWake();
+    void CancelTransientAnimation();
 
 private:
     static bool IsLegacyEmotion(const char* emotion);
@@ -32,9 +41,20 @@ private:
     void LogUnknownEmotionOnce(const char* emotion);
     void LogEmotionTransition(const char* emotion, MhaiBotFace::Emotion mapped);
     void ApplyFaceVisibility();
+    void ApplyEyesOnlyChrome();
+    void SetAlertState(bool error_active, bool battery_low);
+    void UpdateAlertLabel();
+    static bool IsErrorStatus(const char* status);
+    static bool IsErrorEmotion(const char* emotion);
+    static bool IsWarningEmotion(const char* emotion);
+    static bool IsNotificationEmotion(const char* emotion);
 
     std::unique_ptr<MhaiBotFace> face_;
+    lv_obj_t* alert_label_ = nullptr;
     bool face_visible_ = true;
+    bool error_active_ = false;
+    bool battery_low_ = false;
+    bool pending_error_status_ = false;
     std::unordered_set<std::string> logged_unknown_emotions_;
     std::string last_logged_emotion_;
     bool has_logged_emotion_ = false;

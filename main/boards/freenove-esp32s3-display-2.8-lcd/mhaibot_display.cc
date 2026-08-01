@@ -1,20 +1,24 @@
 #include "mhaibot_display.h"
 
+#include "board.h"
+#include "assets/lang_config.h"
 #include "lvgl_theme.h"
+#include "mhaibot_interaction_model.h"
 
+#include <esp_err.h>
 #include <esp_log.h>
+#include <material_symbols.h>
 
 #include <cstring>
 
 #define TAG "MhaiBotDisplay"
 
 namespace {
-// Exceptional states that still use the legacy emoji/GIF set. Everything
-// else — the named MhaiBot face emotions and any unrecognized string — keeps
-// the face on screen.
-constexpr const char* kLegacyEmotions[] = {
-    "warning", "error", "sad", "crying", "angry", "surprised", "shocked", "cancel",
-};
+// Board-local eyes-only palette and minimal alert colors.
+constexpr uint32_t kMhaiBotEyeColor = 0x00C8E0;
+constexpr uint32_t kMhaiBotBackgroundColor = 0x000000;
+constexpr uint32_t kMhaiBotErrorColor = 0xFF3B30;
+constexpr uint32_t kMhaiBotBatteryColor = 0xFF8A00;
 
 const char* FaceEmotionName(MhaiBotFace::Emotion emotion) {
     switch (emotion) {
@@ -53,15 +57,27 @@ MhaiBotDisplay::~MhaiBotDisplay() {
 }
 
 bool MhaiBotDisplay::IsLegacyEmotion(const char* emotion) {
-    if (emotion == nullptr) {
-        return false;
-    }
-    for (const char* legacy : kLegacyEmotions) {
-        if (strcmp(emotion, legacy) == 0) {
-            return true;
-        }
-    }
+    (void)emotion;
     return false;
+}
+
+bool MhaiBotDisplay::IsErrorStatus(const char* status) {
+    return status != nullptr && strcmp(status, Lang::Strings::ERROR) == 0;
+}
+
+bool MhaiBotDisplay::IsErrorEmotion(const char* emotion) {
+    return emotion != nullptr &&
+           (strcmp(emotion, "error") == 0 || strcmp(emotion, "cancel") == 0 ||
+            strcmp(emotion, "cloud_off") == 0);
+}
+
+bool MhaiBotDisplay::IsWarningEmotion(const char* emotion) {
+    return emotion != nullptr && strcmp(emotion, "warning") == 0;
+}
+
+bool MhaiBotDisplay::IsNotificationEmotion(const char* emotion) {
+    return emotion != nullptr &&
+           (strcmp(emotion, "notification") == 0 || strcmp(emotion, "excited") == 0);
 }
 
 MhaiBotFace::Emotion MhaiBotDisplay::ToFaceEmotion(const char* emotion) {
@@ -82,6 +98,9 @@ MhaiBotFace::Emotion MhaiBotDisplay::ToFaceEmotion(const char* emotion) {
     if (strcmp(emotion, "thinking") == 0) {
         return MhaiBotFace::Emotion::kThinking;
     }
+    if (IsWarningEmotion(emotion)) {
+        return MhaiBotFace::Emotion::kThinking;
+    }
     // "confused" reuses the Thinking geometry/glance for now; give it its own
     // Emotion value only if it later needs a visually distinct expression.
     if (strcmp(emotion, "confused") == 0) {
@@ -99,6 +118,9 @@ MhaiBotFace::Emotion MhaiBotDisplay::ToFaceEmotion(const char* emotion) {
     if (strcmp(emotion, "confident") == 0) {
         return MhaiBotFace::Emotion::kConfident;
     }
+    if (IsNotificationEmotion(emotion)) {
+        return MhaiBotFace::Emotion::kHappy;
+    }
     // "neutral" and any unrecognized emotion default to the neutral face.
     return MhaiBotFace::Emotion::kNeutral;
 }
@@ -109,7 +131,7 @@ void MhaiBotDisplay::LogUnknownEmotionOnce(const char* emotion) {
     }
     static constexpr const char* kKnownFaceEmotions[] = {
         "neutral", "robot_2", "happy", "laughing", "thinking", "confused",
-        "speaking", "listening", "relaxed", "confident",
+        "speaking", "listening", "relaxed", "confident", "warning", "notification", "excited",
     };
     for (const char* known : kKnownFaceEmotions) {
         if (strcmp(emotion, known) == 0) {
@@ -149,6 +171,67 @@ void MhaiBotDisplay::ApplyFaceVisibility() {
     }
 }
 
+void MhaiBotDisplay::ApplyEyesOnlyChrome() {
+    const lv_color_t background = lv_color_hex(kMhaiBotBackgroundColor);
+
+    if (container_ != nullptr && lv_obj_is_valid(container_)) {
+        lv_obj_set_style_bg_color(container_, background, 0);
+    }
+    if (content_ != nullptr && lv_obj_is_valid(content_)) {
+        lv_obj_set_style_bg_color(content_, background, 0);
+        lv_obj_add_flag(content_, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    lv_obj_t* objects[] = {
+        top_bar_,       status_bar_,       bottom_bar_,        low_battery_popup_,
+        notification_label_, chat_message_label_, network_label_, mute_label_,
+        battery_label_, status_label_,
+    };
+    for (lv_obj_t* object : objects) {
+        if (object != nullptr && lv_obj_is_valid(object)) {
+            lv_obj_add_flag(object, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    UpdateAlertLabel();
+}
+
+void MhaiBotDisplay::SetAlertState(bool error_active, bool battery_low) {
+    error_active_ = error_active;
+    battery_low_ = battery_low;
+    UpdateAlertLabel();
+}
+
+void MhaiBotDisplay::UpdateAlertLabel() {
+    if (alert_label_ == nullptr || !lv_obj_is_valid(alert_label_)) {
+        return;
+    }
+
+    auto* lvgl_theme = static_cast<LvglTheme*>(current_theme_);
+    const MhaiBotAlert alert = MhaiBotResolveAlert(error_active_, battery_low_);
+    if (alert == MhaiBotAlert::kNone) {
+        lv_obj_add_flag(alert_label_, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    if (alert == MhaiBotAlert::kError) {
+        lv_label_set_text(alert_label_, "!");
+        if (lvgl_theme != nullptr && lvgl_theme->text_font() != nullptr) {
+            lv_obj_set_style_text_font(alert_label_, lvgl_theme->text_font()->font(), 0);
+        }
+        lv_obj_set_style_text_color(alert_label_, lv_color_hex(kMhaiBotErrorColor), 0);
+    } else {
+        lv_label_set_text(alert_label_, MATERIAL_SYMBOLS_BATTERY_ANDROID_0);
+        if (lvgl_theme != nullptr && lvgl_theme->large_icon_font() != nullptr) {
+            lv_obj_set_style_text_font(alert_label_, lvgl_theme->large_icon_font()->font(), 0);
+        }
+        lv_obj_set_style_text_color(alert_label_, lv_color_hex(kMhaiBotBatteryColor), 0);
+    }
+
+    lv_obj_remove_flag(alert_label_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(alert_label_);
+}
+
 void MhaiBotDisplay::SetupUI() {
     SpiLcdDisplay::SetupUI();
 
@@ -158,21 +241,30 @@ void MhaiBotDisplay::SetupUI() {
         return;
     }
 
-    auto* lvgl_theme = static_cast<LvglTheme*>(current_theme_);
-    const lv_color_t eye_color =
-        lvgl_theme != nullptr ? lvgl_theme->text_color() : lv_color_hex(0x000000);
+    const lv_color_t eye_color = lv_color_hex(kMhaiBotEyeColor);
 
     face_ = std::make_unique<MhaiBotFace>(container_, eye_color);
+    alert_label_ = lv_label_create(lv_screen_active());
+    lv_obj_set_width(alert_label_, LV_HOR_RES);
+    lv_obj_set_style_text_align(alert_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(alert_label_, LV_ALIGN_TOP_MID, 0, 12);
+    lv_obj_add_flag(alert_label_, LV_OBJ_FLAG_HIDDEN);
     face_visible_ = true;
     ApplyFaceVisibility();
+    ApplyEyesOnlyChrome();
     ESP_LOGI(TAG, "MhaiBot face initialized");
 }
 
 void MhaiBotDisplay::SetEmotion(const char* emotion) {
     LogEmotionTransition(emotion, ToFaceEmotion(emotion));
+    const bool is_error = pending_error_status_ && (IsErrorEmotion(emotion) || IsWarningEmotion(emotion));
 
     if (face_ == nullptr) {
         SpiLcdDisplay::SetEmotion(emotion);
+        DisplayLockGuard lock(this);
+        SetAlertState(is_error, battery_low_);
+        pending_error_status_ = false;
+        ApplyEyesOnlyChrome();
         return;
     }
 
@@ -184,8 +276,12 @@ void MhaiBotDisplay::SetEmotion(const char* emotion) {
             if (emoji_box_ != nullptr && lv_obj_is_valid(emoji_box_)) {
                 lv_obj_remove_flag(emoji_box_, LV_OBJ_FLAG_HIDDEN);
             }
+            SetAlertState(is_error, battery_low_);
+            pending_error_status_ = false;
         }
         SpiLcdDisplay::SetEmotion(emotion);
+        DisplayLockGuard lock(this);
+        ApplyEyesOnlyChrome();
         return;
     }
 
@@ -193,6 +289,8 @@ void MhaiBotDisplay::SetEmotion(const char* emotion) {
 
     DisplayLockGuard lock(this);
     face_visible_ = true;
+    SetAlertState(is_error, battery_low_);
+    pending_error_status_ = false;
     face_->SetEmotion(ToFaceEmotion(emotion));
     // Stop any GIF before showing the face so LVGL does not keep animating
     // a hidden emoji image.
@@ -201,6 +299,7 @@ void MhaiBotDisplay::SetEmotion(const char* emotion) {
         gif_controller_.reset();
     }
     ApplyFaceVisibility();
+    ApplyEyesOnlyChrome();
 }
 
 void MhaiBotDisplay::SetPreviewImage(std::unique_ptr<LvglImage> image) {
@@ -221,6 +320,7 @@ void MhaiBotDisplay::SetPreviewImage(std::unique_ptr<LvglImage> image) {
         face_->Hide();
     } else {
         ApplyFaceVisibility();
+        ApplyEyesOnlyChrome();
     }
 }
 
@@ -231,6 +331,90 @@ void MhaiBotDisplay::SetTheme(Theme* theme) {
     if (face_ == nullptr || theme == nullptr) {
         return;
     }
-    auto* lvgl_theme = static_cast<LvglTheme*>(theme);
-    face_->SetColor(lvgl_theme->text_color());
+    face_->SetColor(lv_color_hex(kMhaiBotEyeColor));
+    ApplyEyesOnlyChrome();
 }
+
+void MhaiBotDisplay::SetStatus(const char* status) {
+    DisplayLockGuard lock(this);
+    pending_error_status_ = IsErrorStatus(status);
+    if (!pending_error_status_) {
+        SetAlertState(false, battery_low_);
+    }
+    ApplyEyesOnlyChrome();
+    ApplyFaceVisibility();
+}
+
+void MhaiBotDisplay::ShowNotification(const std::string& notification, int duration_ms) {
+    ShowNotification(notification.c_str(), duration_ms);
+}
+
+void MhaiBotDisplay::ShowNotification(const char* notification, int duration_ms) {
+    (void)notification;
+    (void)duration_ms;
+
+    DisplayLockGuard lock(this);
+    if (face_ != nullptr) {
+        face_visible_ = true;
+        face_->SetEmotion(MhaiBotFace::Emotion::kHappy);
+    }
+    ApplyEyesOnlyChrome();
+    ApplyFaceVisibility();
+}
+
+void MhaiBotDisplay::SetChatMessage(const char* role, const char* content) {
+    (void)role;
+    (void)content;
+
+    DisplayLockGuard lock(this);
+    ApplyEyesOnlyChrome();
+    ApplyFaceVisibility();
+}
+
+void MhaiBotDisplay::ClearChatMessages() {
+    DisplayLockGuard lock(this);
+    ApplyEyesOnlyChrome();
+    ApplyFaceVisibility();
+}
+
+void MhaiBotDisplay::UpdateStatusBar(bool update_all) {
+    (void)update_all;
+
+    int battery_level = 0;
+    bool charging = false;
+    bool discharging = false;
+    bool low_battery = false;
+    if (Board::GetInstance().GetBatteryLevel(battery_level, charging, discharging)) {
+        if (!charging) {
+            const int level_index =
+                battery_level <= 0 ? 0
+                                   : (battery_level >= 100 ? 7
+                                                           : 1 + ((battery_level - 1) * 6 / 99));
+            low_battery = discharging && level_index == 0;
+        }
+    }
+
+    DisplayLockGuard lock(this);
+    SetAlertState(error_active_, low_battery);
+    ApplyEyesOnlyChrome();
+    ApplyFaceVisibility();
+}
+
+bool MhaiBotDisplay::SetPanelPowered(bool powered) {
+    esp_err_t err = esp_lcd_panel_disp_on_off(panel_, powered);
+    if (err == ESP_OK) {
+        return true;
+    }
+    if (err == ESP_ERR_NOT_SUPPORTED) {
+        ESP_LOGW(TAG, "Panel on/off is not supported; using backlight only");
+        return false;
+    }
+    ESP_LOGE(TAG, "Panel on/off failed: %s", esp_err_to_name(err));
+    return false;
+}
+
+void MhaiBotDisplay::StartPetting() {}
+
+void MhaiBotDisplay::StartGroggyWake() {}
+
+void MhaiBotDisplay::CancelTransientAnimation() {}
