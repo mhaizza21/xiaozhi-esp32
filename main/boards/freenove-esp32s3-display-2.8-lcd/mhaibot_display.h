@@ -56,6 +56,11 @@ private:
     bool error_active_ = false;
     bool battery_low_ = false;
     bool pending_error_status_ = false;
+    // Application::HandleStateChangedEvent() calls SetStatus(LISTENING)
+    // immediately before SetEmotion("neutral") when entering the Listening
+    // state, since core app code has no dedicated "listening" emotion call.
+    // Remember that so SetEmotion() can show the Listening pose instead.
+    bool listening_status_active_ = false;
     std::unordered_set<std::string> logged_unknown_emotions_;
     std::string last_logged_emotion_;
     bool has_logged_emotion_ = false;

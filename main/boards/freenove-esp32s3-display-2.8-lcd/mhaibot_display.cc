@@ -298,12 +298,14 @@ void MhaiBotDisplay::SetEmotion(const char* emotion) {
     }
 
     LogUnknownEmotionOnce(emotion);
+    const bool force_listening_pose =
+        listening_status_active_ && emotion != nullptr && strcmp(emotion, "neutral") == 0;
 
     DisplayLockGuard lock(this);
     face_visible_ = true;
     SetAlertState(is_error, battery_low_);
     pending_error_status_ = false;
-    face_->SetEmotion(ToFaceEmotion(emotion));
+    face_->SetEmotion(force_listening_pose ? MhaiBotFaceV2::Emotion::kListening : ToFaceEmotion(emotion));
     // Stop any GIF before showing the face so LVGL does not keep animating
     // a hidden emoji image.
     if (gif_controller_) {
@@ -350,6 +352,7 @@ void MhaiBotDisplay::SetTheme(Theme* theme) {
 void MhaiBotDisplay::SetStatus(const char* status) {
     DisplayLockGuard lock(this);
     pending_error_status_ = IsErrorStatus(status);
+    listening_status_active_ = status != nullptr && strcmp(status, Lang::Strings::LISTENING) == 0;
     if (!pending_error_status_) {
         SetAlertState(false, battery_low_);
     }
