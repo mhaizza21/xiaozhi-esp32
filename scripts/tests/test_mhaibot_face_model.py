@@ -10,6 +10,8 @@ BOARD_DIR = ROOT / "main" / "boards" / "freenove-esp32s3-display-2.8-lcd"
 MODEL_SOURCE = BOARD_DIR / "mhaibot_interaction_model.cc"
 DISPLAY_HEADER = BOARD_DIR / "mhaibot_display.h"
 DISPLAY_SOURCE = BOARD_DIR / "mhaibot_display.cc"
+FACE_V2_HEADER = BOARD_DIR / "mhaibot_face_v2.h"
+FACE_V2_SOURCE = BOARD_DIR / "mhaibot_face_v2.cc"
 MODEL_TEST = ROOT / "scripts" / "tests" / "mhaibot_face_model_test.cc"
 
 
@@ -28,11 +30,51 @@ def find_cxx_compiler():
 
 
 class MhaiBotFaceModelTest(unittest.TestCase):
+    def test_face_v2_transient_renderer_contract(self):
+        header = FACE_V2_HEADER.read_text(encoding="utf-8")
+        source = FACE_V2_SOURCE.read_text(encoding="utf-8")
+        display_source = DISPLAY_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("lv_obj_t* sleep_label_", header)
+        self.assertIn("void StartPetting()", header)
+        self.assertIn("void StartGroggyWake()", header)
+        self.assertIn("void CancelTransientAnimation()", header)
+        self.assertIn("bool IsGroggyWakeActive() const", header)
+        self.assertIn("enum class TransientMode", header)
+        self.assertIn("MhaiBotSleepText(", source)
+        self.assertIn("MhaiBotGroggyProgressPerMille(", source)
+        self.assertIn("MhaiBotPetDurationMs()", source)
+        self.assertIn("MhaiBotGroggyWakeDurationMs()", source)
+        self.assertIn("LV_OPA_40 + 13", source)
+        self.assertIn("lv_label_set_text_static(sleep_label_", source)
+        self.assertIn("lv_obj_align(sleep_label_, LV_ALIGN_TOP_RIGHT", source)
+        self.assertIn("tick_ms = 33", header)
+        self.assertEqual(source.count("lv_timer_create("), 1)
+        self.assertNotIn("vTaskDelay", source)
+        self.assertNotIn("xTaskCreate", source)
+        self.assertNotIn("malloc", method_body(source, "void MhaiBotFaceV2::Tick(uint32_t elapsed_ms)"))
+        self.assertNotIn("new ", method_body(source, "void MhaiBotFaceV2::Tick(uint32_t elapsed_ms)"))
+        face_text = (header + source).lower()
+        self.assertNotIn("mouth", face_text)
+        self.assertNotIn("eyebrow", face_text)
+        self.assertNotIn("glasses", face_text)
+        self.assertNotIn("notch", face_text)
+
+        for signature, call in (
+            ("void MhaiBotDisplay::StartPetting()", "face_->StartPetting();"),
+            ("void MhaiBotDisplay::StartGroggyWake()", "face_->StartGroggyWake();"),
+            ("void MhaiBotDisplay::CancelTransientAnimation()", "face_->CancelTransientAnimation();"),
+        ):
+            self.assertIn(call, method_body(display_source, signature))
+
     def test_display_eyes_only_chrome_contract(self):
         header = DISPLAY_HEADER.read_text(encoding="utf-8")
         display_source = DISPLAY_SOURCE.read_text(encoding="utf-8")
         eyes_only_body = method_body(display_source, "void MhaiBotDisplay::ApplyEyesOnlyChrome()")
 
+        self.assertIn('#include "mhaibot_face_v2.h"', header)
+        self.assertNotIn("display/mhaibot_face.h", header)
+        self.assertIn("std::unique_ptr<MhaiBotFaceV2> face_", header)
         self.assertNotIn("ApplyMinimalTheme", display_source)
         self.assertNotIn("kLegacyEmotions", display_source)
         self.assertIn("(void)emotion;", method_body(display_source, "bool MhaiBotDisplay::IsLegacyEmotion(const char* emotion)"))
@@ -56,6 +98,7 @@ class MhaiBotFaceModelTest(unittest.TestCase):
             "void StartPetting();",
             "void StartGroggyWake();",
             "void CancelTransientAnimation();",
+            "bool IsGroggyWakeActive() const;",
         ):
             self.assertIn(declaration, header)
 
@@ -199,7 +242,7 @@ class MhaiBotFaceModelTest(unittest.TestCase):
             'strcmp(emotion, "cancel") == 0',
             'strcmp(emotion, "cloud_off") == 0',
             'strcmp(emotion, "notification") == 0 || strcmp(emotion, "excited") == 0',
-            "face_->SetEmotion(MhaiBotFace::Emotion::kHappy);",
+            "face_->SetEmotion(MhaiBotFaceV2::Emotion::kHappy);",
             "esp_lcd_panel_disp_on_off(panel_, powered)",
             "err == ESP_ERR_NOT_SUPPORTED",
         ):

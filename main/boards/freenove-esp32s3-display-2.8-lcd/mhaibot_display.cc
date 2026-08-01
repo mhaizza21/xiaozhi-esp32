@@ -1,7 +1,7 @@
 #include "mhaibot_display.h"
 
-#include "board.h"
 #include "assets/lang_config.h"
+#include "board.h"
 #include "lvgl_theme.h"
 #include "mhaibot_interaction_model.h"
 
@@ -20,24 +20,28 @@ constexpr uint32_t kMhaiBotBackgroundColor = 0x000000;
 constexpr uint32_t kMhaiBotErrorColor = 0xFF3B30;
 constexpr uint32_t kMhaiBotBatteryColor = 0xFF8A00;
 
-const char* FaceEmotionName(MhaiBotFace::Emotion emotion) {
+const char* FaceEmotionName(MhaiBotFaceV2::Emotion emotion) {
     switch (emotion) {
-        case MhaiBotFace::Emotion::kNeutral:
+        case MhaiBotFaceV2::Emotion::kNeutral:
             return "neutral";
-        case MhaiBotFace::Emotion::kRobot2:
+        case MhaiBotFaceV2::Emotion::kRobot2:
             return "robot_2";
-        case MhaiBotFace::Emotion::kHappy:
+        case MhaiBotFaceV2::Emotion::kHappy:
             return "happy";
-        case MhaiBotFace::Emotion::kThinking:
+        case MhaiBotFaceV2::Emotion::kThinking:
             return "thinking";
-        case MhaiBotFace::Emotion::kSpeaking:
+        case MhaiBotFaceV2::Emotion::kSpeaking:
             return "speaking";
-        case MhaiBotFace::Emotion::kListening:
+        case MhaiBotFaceV2::Emotion::kListening:
             return "listening";
-        case MhaiBotFace::Emotion::kRelaxed:
+        case MhaiBotFaceV2::Emotion::kRelaxed:
             return "relaxed";
-        case MhaiBotFace::Emotion::kConfident:
+        case MhaiBotFaceV2::Emotion::kConfident:
             return "confident";
+        case MhaiBotFaceV2::Emotion::kSleeping:
+            return "sleeping";
+        case MhaiBotFaceV2::Emotion::kSleepy:
+            return "sleepy";
     }
     return "unknown";
 }
@@ -66,9 +70,8 @@ bool MhaiBotDisplay::IsErrorStatus(const char* status) {
 }
 
 bool MhaiBotDisplay::IsErrorEmotion(const char* emotion) {
-    return emotion != nullptr &&
-           (strcmp(emotion, "error") == 0 || strcmp(emotion, "cancel") == 0 ||
-            strcmp(emotion, "cloud_off") == 0);
+    return emotion != nullptr && (strcmp(emotion, "error") == 0 || strcmp(emotion, "cancel") == 0 ||
+                                  strcmp(emotion, "cloud_off") == 0);
 }
 
 bool MhaiBotDisplay::IsWarningEmotion(const char* emotion) {
@@ -80,49 +83,55 @@ bool MhaiBotDisplay::IsNotificationEmotion(const char* emotion) {
            (strcmp(emotion, "notification") == 0 || strcmp(emotion, "excited") == 0);
 }
 
-MhaiBotFace::Emotion MhaiBotDisplay::ToFaceEmotion(const char* emotion) {
+MhaiBotFaceV2::Emotion MhaiBotDisplay::ToFaceEmotion(const char* emotion) {
     if (emotion == nullptr) {
-        return MhaiBotFace::Emotion::kNeutral;
+        return MhaiBotFaceV2::Emotion::kNeutral;
     }
     if (strcmp(emotion, "robot_2") == 0) {
-        return MhaiBotFace::Emotion::kRobot2;
+        return MhaiBotFaceV2::Emotion::kRobot2;
     }
     if (strcmp(emotion, "happy") == 0) {
-        return MhaiBotFace::Emotion::kHappy;
+        return MhaiBotFaceV2::Emotion::kHappy;
     }
     // "laughing" reuses the Happy geometry for now; give it its own Emotion
     // value only if it later needs a visually distinct expression.
     if (strcmp(emotion, "laughing") == 0) {
-        return MhaiBotFace::Emotion::kHappy;
+        return MhaiBotFaceV2::Emotion::kHappy;
     }
     if (strcmp(emotion, "thinking") == 0) {
-        return MhaiBotFace::Emotion::kThinking;
+        return MhaiBotFaceV2::Emotion::kThinking;
     }
     if (IsWarningEmotion(emotion)) {
-        return MhaiBotFace::Emotion::kThinking;
+        return MhaiBotFaceV2::Emotion::kThinking;
     }
     // "confused" reuses the Thinking geometry/glance for now; give it its own
     // Emotion value only if it later needs a visually distinct expression.
     if (strcmp(emotion, "confused") == 0) {
-        return MhaiBotFace::Emotion::kThinking;
+        return MhaiBotFaceV2::Emotion::kThinking;
     }
     if (strcmp(emotion, "speaking") == 0) {
-        return MhaiBotFace::Emotion::kSpeaking;
+        return MhaiBotFaceV2::Emotion::kSpeaking;
     }
     if (strcmp(emotion, "listening") == 0) {
-        return MhaiBotFace::Emotion::kListening;
+        return MhaiBotFaceV2::Emotion::kListening;
     }
     if (strcmp(emotion, "relaxed") == 0) {
-        return MhaiBotFace::Emotion::kRelaxed;
+        return MhaiBotFaceV2::Emotion::kRelaxed;
     }
     if (strcmp(emotion, "confident") == 0) {
-        return MhaiBotFace::Emotion::kConfident;
+        return MhaiBotFaceV2::Emotion::kConfident;
     }
     if (IsNotificationEmotion(emotion)) {
-        return MhaiBotFace::Emotion::kHappy;
+        return MhaiBotFaceV2::Emotion::kHappy;
+    }
+    if (strcmp(emotion, "sleeping") == 0 || strcmp(emotion, "sleep") == 0) {
+        return MhaiBotFaceV2::Emotion::kSleeping;
+    }
+    if (strcmp(emotion, "sleepy") == 0) {
+        return MhaiBotFaceV2::Emotion::kSleepy;
     }
     // "neutral" and any unrecognized emotion default to the neutral face.
-    return MhaiBotFace::Emotion::kNeutral;
+    return MhaiBotFaceV2::Emotion::kNeutral;
 }
 
 void MhaiBotDisplay::LogUnknownEmotionOnce(const char* emotion) {
@@ -130,8 +139,9 @@ void MhaiBotDisplay::LogUnknownEmotionOnce(const char* emotion) {
         return;
     }
     static constexpr const char* kKnownFaceEmotions[] = {
-        "neutral", "robot_2", "happy", "laughing", "thinking", "confused",
-        "speaking", "listening", "relaxed", "confident", "warning", "notification", "excited",
+        "neutral",  "robot_2",   "happy",        "laughing",  "thinking", "confused",
+        "speaking", "listening", "relaxed",      "confident", "sleepy",   "sleeping",
+        "sleep",    "warning",   "notification", "excited",
     };
     for (const char* known : kKnownFaceEmotions) {
         if (strcmp(emotion, known) == 0) {
@@ -143,7 +153,7 @@ void MhaiBotDisplay::LogUnknownEmotionOnce(const char* emotion) {
     }
 }
 
-void MhaiBotDisplay::LogEmotionTransition(const char* emotion, MhaiBotFace::Emotion mapped) {
+void MhaiBotDisplay::LogEmotionTransition(const char* emotion, MhaiBotFaceV2::Emotion mapped) {
     const std::string raw = emotion != nullptr ? emotion : "(null)";
     if (has_logged_emotion_ && raw == last_logged_emotion_) {
         return;
@@ -183,9 +193,10 @@ void MhaiBotDisplay::ApplyEyesOnlyChrome() {
     }
 
     lv_obj_t* objects[] = {
-        top_bar_,       status_bar_,       bottom_bar_,        low_battery_popup_,
-        notification_label_, chat_message_label_, network_label_, mute_label_,
-        battery_label_, status_label_,
+        top_bar_,           status_bar_,         bottom_bar_,
+        low_battery_popup_, notification_label_, chat_message_label_,
+        network_label_,     mute_label_,         battery_label_,
+        status_label_,
     };
     for (lv_obj_t* object : objects) {
         if (object != nullptr && lv_obj_is_valid(object)) {
@@ -243,7 +254,7 @@ void MhaiBotDisplay::SetupUI() {
 
     const lv_color_t eye_color = lv_color_hex(kMhaiBotEyeColor);
 
-    face_ = std::make_unique<MhaiBotFace>(container_, eye_color);
+    face_ = std::make_unique<MhaiBotFaceV2>(container_, eye_color);
     alert_label_ = lv_label_create(lv_screen_active());
     lv_obj_set_width(alert_label_, LV_HOR_RES);
     lv_obj_set_style_text_align(alert_label_, LV_TEXT_ALIGN_CENTER, 0);
@@ -257,7 +268,8 @@ void MhaiBotDisplay::SetupUI() {
 
 void MhaiBotDisplay::SetEmotion(const char* emotion) {
     LogEmotionTransition(emotion, ToFaceEmotion(emotion));
-    const bool is_error = pending_error_status_ && (IsErrorEmotion(emotion) || IsWarningEmotion(emotion));
+    const bool is_error =
+        pending_error_status_ && (IsErrorEmotion(emotion) || IsWarningEmotion(emotion));
 
     if (face_ == nullptr) {
         SpiLcdDisplay::SetEmotion(emotion);
@@ -356,7 +368,7 @@ void MhaiBotDisplay::ShowNotification(const char* notification, int duration_ms)
     DisplayLockGuard lock(this);
     if (face_ != nullptr) {
         face_visible_ = true;
-        face_->SetEmotion(MhaiBotFace::Emotion::kHappy);
+        face_->SetEmotion(MhaiBotFaceV2::Emotion::kHappy);
     }
     ApplyEyesOnlyChrome();
     ApplyFaceVisibility();
@@ -387,9 +399,9 @@ void MhaiBotDisplay::UpdateStatusBar(bool update_all) {
     if (Board::GetInstance().GetBatteryLevel(battery_level, charging, discharging)) {
         if (!charging) {
             const int level_index =
-                battery_level <= 0 ? 0
-                                   : (battery_level >= 100 ? 7
-                                                           : 1 + ((battery_level - 1) * 6 / 99));
+                battery_level <= 0
+                    ? 0
+                    : (battery_level >= 100 ? 7 : 1 + ((battery_level - 1) * 6 / 99));
             low_battery = discharging && level_index == 0;
         }
     }
@@ -413,8 +425,27 @@ bool MhaiBotDisplay::SetPanelPowered(bool powered) {
     return false;
 }
 
-void MhaiBotDisplay::StartPetting() {}
+void MhaiBotDisplay::StartPetting() {
+    DisplayLockGuard lock(this);
+    if (face_ != nullptr) {
+        face_->StartPetting();
+    }
+}
 
-void MhaiBotDisplay::StartGroggyWake() {}
+void MhaiBotDisplay::StartGroggyWake() {
+    DisplayLockGuard lock(this);
+    if (face_ != nullptr) {
+        face_->StartGroggyWake();
+    }
+}
 
-void MhaiBotDisplay::CancelTransientAnimation() {}
+void MhaiBotDisplay::CancelTransientAnimation() {
+    DisplayLockGuard lock(this);
+    if (face_ != nullptr) {
+        face_->CancelTransientAnimation();
+    }
+}
+
+bool MhaiBotDisplay::IsGroggyWakeActive() const {
+    return face_ != nullptr && face_->IsGroggyWakeActive();
+}

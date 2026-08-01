@@ -2,7 +2,7 @@
 #define MHAIBOT_DISPLAY_H
 
 #include "display/lcd_display.h"
-#include "display/mhaibot_face.h"
+#include "mhaibot_face_v2.h"
 
 #include <memory>
 #include <string>
@@ -34,12 +34,13 @@ public:
     void StartPetting();
     void StartGroggyWake();
     void CancelTransientAnimation();
+    bool IsGroggyWakeActive() const;
 
 private:
     static bool IsLegacyEmotion(const char* emotion);
-    static MhaiBotFace::Emotion ToFaceEmotion(const char* emotion);
+    static MhaiBotFaceV2::Emotion ToFaceEmotion(const char* emotion);
     void LogUnknownEmotionOnce(const char* emotion);
-    void LogEmotionTransition(const char* emotion, MhaiBotFace::Emotion mapped);
+    void LogEmotionTransition(const char* emotion, MhaiBotFaceV2::Emotion mapped);
     void ApplyFaceVisibility();
     void ApplyEyesOnlyChrome();
     void SetAlertState(bool error_active, bool battery_low);
@@ -49,7 +50,7 @@ private:
     static bool IsWarningEmotion(const char* emotion);
     static bool IsNotificationEmotion(const char* emotion);
 
-    std::unique_ptr<MhaiBotFace> face_;
+    std::unique_ptr<MhaiBotFaceV2> face_;
     lv_obj_t* alert_label_ = nullptr;
     bool face_visible_ = true;
     bool error_active_ = false;
