@@ -73,3 +73,24 @@
   - The same ESP-IDF v6.0.2 release build passed from a short detached validation worktree at C:/xmbot-v2-build for commit 0a0e718.
   - Firmware artifact from this validation build: C:/xmbot-v2-build/build/merged-binary.bin.
 
+## Task 4: Petting, sleep text, and groggy face animation
+
+- Status: completed
+- Started: 2026-08-02
+- Completed: 2026-08-02
+- Commit: 2f7e521
+- Implementation agent: 019fbf57-86cf-7bb2-9cb9-8d41178e991d
+- Spec reviewer:
+  - 019fbf5b-de42-7dc2-bb1f-0c75395df9fb approved the staged renderer task.
+- Code-quality reviewers:
+  - 019fbf5c-448b-7132-ae13-8ed575f8cc34 approved the staged renderer task.
+  - 019fbf5e-7509-7ed1-8519-eba8a5d2c841 requested the no-mouth test cover both header and source; fixed before commit.
+- Validation:
+  - python -m unittest scripts.tests.test_mhaibot_face_model -v
+  - python -m unittest discover -s scripts/tests -p 'test_*.py' -v
+  - C:/Espressif/tools/esp-clang/esp-20.1.1_20250829/esp-clang/bin/clang-format.exe -i on touched board C++ files
+  - git diff --cached --check
+- Validation notes:
+  - Focused and full Python suites passed with one explicit local skip for C++ runtime assertions because Windows Application Control blocks host ld.lld.
+  - Shared main/display/mhaibot_face.* was not modified for this task; the Freenove board now uses board-local MhaiBotFaceV2.
+
