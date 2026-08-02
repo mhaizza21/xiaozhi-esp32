@@ -74,6 +74,12 @@ three CI checks (`Build MhaiBot Firmware`, `Build Boards`, `Claude Code Review`)
       sequence (not a chat toggle); the `ShowReactionEmoji('sleepy')` badge and "eyes getting
       bigger" (Sleeping → Sleepy → Neutral) animation the user described match the intended
       wake ramp exactly.
+- [x] Speaker output explicitly confirmed by ear — user heard a clear, normal spoken reply.
+      Observation (not a new bug, and not touched by this PR — audio/wake-word pipeline is
+      explicitly out of scope): saying "Hi ESP" alone woke the board but the immediately-following
+      utterance wasn't captured/answered; a second, separate utterance got a normal reply. Likely
+      a pre-existing wake-word timing quirk, not something introduced by this display/touch PR —
+      worth a separate investigation later, but not blocking this one.
 
 ## Resolved — was a build/deploy process bug, not a firmware bug
 
@@ -101,8 +107,5 @@ three CI checks (`Build MhaiBot Firmware`, `Build Boards`, `Claude Code Review`)
 - [ ] No LVGL assertion / watchdog reset specifically during sleep/screen-off/wake cycles
       (only exercised during normal idle/petting/startled/conversation use, see above).
 - [ ] Touch still responds after repeated sleep/wake cycles.
-- [ ] Speaker output explicitly confirmed by ear (a voice reply was logged as text and the
-      conversation completed normally, which implies the audio path worked, but no one
-      explicitly confirmed hearing it).
 - [ ] Known TTS distortion — not re-tested this session; still assumed unresolved, not claimed
       fixed by this firmware.
