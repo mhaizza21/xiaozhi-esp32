@@ -91,6 +91,7 @@ private:
     i2c_master_bus_handle_t codec_i2c_bus_;
     TouchDriver touch_;
     MhaiBotPetGestureDetector pet_gesture_;
+    MhaiBotStartleTapDetector startle_tap_;
     AdcBatteryMonitor* adc_battery_monitor_;
     PowerSaveTimer* power_save_timer_ = nullptr;
     std::atomic<bool> screen_off_{false};
@@ -135,6 +136,10 @@ private:
                 !self->groggy_wake_active_.load()) {
                 if (self->pet_gesture_.Update(t, x, y, now)) {
                     app.Schedule([self]() { self->display_->StartPetting(); });
+                    self->suppress_touch_release_.store(true);
+                }
+                if (self->startle_tap_.Update(t, x, y, now)) {
+                    app.Schedule([self]() { self->display_->StartStartled(); });
                     self->suppress_touch_release_.store(true);
                 }
             }

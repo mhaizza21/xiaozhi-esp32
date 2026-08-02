@@ -151,6 +151,12 @@ void MhaiBotFaceV2::StartPetting() {
     HideSleepLabel();
 }
 
+void MhaiBotFaceV2::StartStartled() {
+    transient_mode_ = TransientMode::kStartled;
+    transient_elapsed_ms_ = 0;
+    HideSleepLabel();
+}
+
 void MhaiBotFaceV2::StartGroggyWake() {
     if (transient_mode_ == TransientMode::kGroggyWake) {
         return;
@@ -197,6 +203,16 @@ void MhaiBotFaceV2::Tick(uint32_t elapsed_ms) {
     current_pose_ = ResolveRenderedPose();
     ApplyPose(current_pose_);
 
+    if (transient_mode_ == TransientMode::kPetting) {
+        // Slow triangle-wave shimmer (0..4..0 every ~1.1s) so the closed,
+        // content eyes gently glow rather than sitting at flat opacity.
+        const int glow_phase = static_cast<int>((frame_ / 4) % 8);
+        const int glow_step = glow_phase <= 4 ? glow_phase : 8 - glow_phase;
+        ApplyEyeOpacity(static_cast<lv_opa_t>(200 + glow_step * 13));
+    } else {
+        ApplyEyeOpacity(LV_OPA_COVER);
+    }
+
     if (transient_mode_ == TransientMode::kPetting &&
         transient_elapsed_ms_ >= MhaiBotPetDurationMs()) {
         transient_mode_ = TransientMode::kNone;
@@ -207,6 +223,11 @@ void MhaiBotFaceV2::Tick(uint32_t elapsed_ms) {
         transient_mode_ = TransientMode::kNone;
         transient_elapsed_ms_ = 0;
         BeginTransitionTo(Emotion::kNeutral);
+    } else if (transient_mode_ == TransientMode::kStartled &&
+               transient_elapsed_ms_ >= MhaiBotStartleDurationMs()) {
+        transient_mode_ = TransientMode::kNone;
+        transient_elapsed_ms_ = 0;
+        BeginTransitionTo(target_emotion_);
     }
 
     if (transient_mode_ == TransientMode::kNone && target_emotion_ == Emotion::kSleeping) {
@@ -214,6 +235,15 @@ void MhaiBotFaceV2::Tick(uint32_t elapsed_ms) {
         ApplySleepLabel(sleep_elapsed_ms_);
     } else {
         HideSleepLabel();
+    }
+}
+
+void MhaiBotFaceV2::ApplyEyeOpacity(lv_opa_t opa) {
+    if (left_eye_ != nullptr && lv_obj_is_valid(left_eye_)) {
+        lv_obj_set_style_bg_opa(left_eye_, opa, 0);
+    }
+    if (right_eye_ != nullptr && lv_obj_is_valid(right_eye_)) {
+        lv_obj_set_style_bg_opa(right_eye_, opa, 0);
     }
 }
 
@@ -294,13 +324,22 @@ MhaiBotFaceV2::Pose MhaiBotFaceV2::ResolveRenderedPose() const {
         const uint16_t in_progress = ClampProgress(transient_elapsed_ms_, config_.transition_ms);
         Pose pose = InterpolatePose(current_pose_, PettingPose(), in_progress);
         const int sway = static_cast<int>((frame_ / 5) % 5) - 2;
+        const int bob = static_cast<int>((frame_ / 8) % 3) - 1;
         pose.left_x += sway;
         pose.right_x += sway;
+        pose.y += bob;
         return pose;
     }
 
     if (transient_mode_ == TransientMode::kGroggyWake) {
         return GroggyPose(transient_elapsed_ms_);
+    }
+
+    if (transient_mode_ == TransientMode::kStartled) {
+        // Snap wide open immediately, then relax back to the current
+        // emotion's pose over the rest of the startle window.
+        const uint16_t progress = ClampProgress(transient_elapsed_ms_, MhaiBotStartleDurationMs());
+        return InterpolatePose(StartledPose(), ResolveBasePose(target_emotion_), progress);
     }
 
     const Pose target = ResolveBasePose(target_emotion_);
@@ -322,10 +361,22 @@ MhaiBotFaceV2::Pose MhaiBotFaceV2::InterpolatePose(const Pose& from, const Pose&
 
 MhaiBotFaceV2::Pose MhaiBotFaceV2::PettingPose() const {
     Pose pose = ResolveBasePose(Emotion::kHappy);
-    if (pose.height > 40) {
-        pose.height = 40;
-    }
-    pose.y += 8;
+    // Thin, nearly-closed eyes read clearly as a content ^_^ squint (distinct
+    // from the lighter kHappy squint and from the fully-closed Sleeping
+    // pose); the near-circular radius keeps the ends soft/rounded.
+    pose.height = 10;
+    pose.radius = pose.height / 2;
+    pose.y += 12;
+    return pose;
+}
+
+MhaiBotFaceV2::Pose MhaiBotFaceV2::StartledPose() const {
+    Pose pose = ResolveBasePose(target_emotion_);
+    pose.left_x -= 7;
+    pose.right_x += 7;
+    pose.width += 14;
+    pose.height += 20;
+    pose.y -= 8;
     return pose;
 }
 

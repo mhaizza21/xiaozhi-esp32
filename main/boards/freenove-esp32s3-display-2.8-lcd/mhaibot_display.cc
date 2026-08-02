@@ -54,6 +54,11 @@ MhaiBotDisplay::MhaiBotDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel
                     swap_xy) {}
 
 MhaiBotDisplay::~MhaiBotDisplay() {
+    if (reaction_emoji_timer_ != nullptr) {
+        esp_timer_stop(reaction_emoji_timer_);
+        esp_timer_delete(reaction_emoji_timer_);
+        reaction_emoji_timer_ = nullptr;
+    }
     // Tear down the face (LVGL timer + objects) under the LVGL lock before the
     // base LcdDisplay destructor deletes container_/display_.
     DisplayLockGuard lock(this);
@@ -260,10 +265,62 @@ void MhaiBotDisplay::SetupUI() {
     lv_obj_set_style_text_align(alert_label_, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(alert_label_, LV_ALIGN_TOP_MID, 0, 12);
     lv_obj_add_flag(alert_label_, LV_OBJ_FLAG_HIDDEN);
+
+    reaction_emoji_ = lv_image_create(lv_screen_active());
+    lv_obj_align(reaction_emoji_, LV_ALIGN_TOP_RIGHT, -8, 8);
+    lv_obj_add_flag(reaction_emoji_, LV_OBJ_FLAG_HIDDEN);
+    if (reaction_emoji_timer_ == nullptr) {
+        const esp_timer_create_args_t timer_args = {
+            .callback = &MhaiBotDisplay::ReactionEmojiTimerCallback,
+            .arg = this,
+            .name = "mhaibot_reaction_emoji",
+        };
+        esp_timer_create(&timer_args, &reaction_emoji_timer_);
+    }
+
     face_visible_ = true;
     ApplyFaceVisibility();
     ApplyEyesOnlyChrome();
     ESP_LOGI(TAG, "MhaiBot face initialized");
+}
+
+void MhaiBotDisplay::ShowReactionEmoji(const char* name, uint32_t duration_ms) {
+    ESP_LOGI(TAG, "ShowReactionEmoji('%s') reaction_emoji_=%p current_theme_=%p", name,
+             reaction_emoji_, current_theme_);
+    if (reaction_emoji_ == nullptr || current_theme_ == nullptr) {
+        return;
+    }
+    auto emoji_collection = static_cast<LvglTheme*>(current_theme_)->emoji_collection();
+    ESP_LOGI(TAG, "ShowReactionEmoji emoji_collection=%p", emoji_collection.get());
+    const LvglImage* image = emoji_collection != nullptr ? emoji_collection->GetEmojiImage(name) : nullptr;
+    ESP_LOGI(TAG, "ShowReactionEmoji image=%p", image);
+    if (image == nullptr) {
+        return;
+    }
+    {
+        DisplayLockGuard lock(this);
+        lv_image_set_src(reaction_emoji_, image->image_dsc());
+        lv_obj_remove_flag(reaction_emoji_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(reaction_emoji_);
+    }
+    if (reaction_emoji_timer_ != nullptr) {
+        esp_timer_stop(reaction_emoji_timer_);
+        esp_timer_start_once(reaction_emoji_timer_, static_cast<uint64_t>(duration_ms) * 1000);
+    }
+}
+
+void MhaiBotDisplay::HideReactionEmoji() {
+    if (reaction_emoji_timer_ != nullptr) {
+        esp_timer_stop(reaction_emoji_timer_);
+    }
+    DisplayLockGuard lock(this);
+    if (reaction_emoji_ != nullptr && lv_obj_is_valid(reaction_emoji_)) {
+        lv_obj_add_flag(reaction_emoji_, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void MhaiBotDisplay::ReactionEmojiTimerCallback(void* arg) {
+    static_cast<MhaiBotDisplay*>(arg)->HideReactionEmoji();
 }
 
 void MhaiBotDisplay::SetEmotion(const char* emotion) {
@@ -429,24 +486,43 @@ bool MhaiBotDisplay::SetPanelPowered(bool powered) {
 }
 
 void MhaiBotDisplay::StartPetting() {
-    DisplayLockGuard lock(this);
-    if (face_ != nullptr) {
-        face_->StartPetting();
+    {
+        DisplayLockGuard lock(this);
+        if (face_ != nullptr) {
+            face_->StartPetting();
+        }
     }
+    ShowReactionEmoji("loving", MhaiBotPetDurationMs());
 }
 
 void MhaiBotDisplay::StartGroggyWake() {
-    DisplayLockGuard lock(this);
-    if (face_ != nullptr) {
-        face_->StartGroggyWake();
+    {
+        DisplayLockGuard lock(this);
+        if (face_ != nullptr) {
+            face_->StartGroggyWake();
+        }
     }
+    ShowReactionEmoji("sleepy", MhaiBotGroggyWakeDurationMs());
+}
+
+void MhaiBotDisplay::StartStartled() {
+    {
+        DisplayLockGuard lock(this);
+        if (face_ != nullptr) {
+            face_->StartStartled();
+        }
+    }
+    ShowReactionEmoji("shocked", MhaiBotStartleDurationMs());
 }
 
 void MhaiBotDisplay::CancelTransientAnimation() {
-    DisplayLockGuard lock(this);
-    if (face_ != nullptr) {
-        face_->CancelTransientAnimation();
+    {
+        DisplayLockGuard lock(this);
+        if (face_ != nullptr) {
+            face_->CancelTransientAnimation();
+        }
     }
+    HideReactionEmoji();
 }
 
 bool MhaiBotDisplay::IsGroggyWakeActive() const {

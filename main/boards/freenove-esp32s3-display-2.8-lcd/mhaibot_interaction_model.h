@@ -20,6 +20,22 @@ private:
     uint32_t started_ms_ = 0;
 };
 
+// Detects three quick taps at (roughly) the same spot -- the closest this
+// touch controller can approximate a "hard knock", since it reports only
+// position and touch/release, no pressure.
+class MhaiBotStartleTapDetector {
+public:
+    bool Update(bool touched, uint16_t x, uint16_t y, uint32_t now_ms);
+    void Reset();
+
+private:
+    bool was_touched_ = false;
+    uint8_t tap_count_ = 0;
+    uint16_t anchor_x_ = 0;
+    uint16_t anchor_y_ = 0;
+    uint32_t first_tap_ms_ = 0;
+};
+
 uint16_t MhaiBotPetZoneTop();
 uint16_t MhaiBotPetZoneBottom();
 uint16_t MhaiBotPetMinStrokePx();
@@ -29,6 +45,9 @@ uint32_t MhaiBotPetDurationMs();
 uint32_t MhaiBotIdleSleepTimeoutSeconds();
 uint32_t MhaiBotScreenOffIdleSeconds();
 uint32_t MhaiBotGroggyWakeDurationMs();
+uint16_t MhaiBotStartleTapMaxDriftPx();
+uint32_t MhaiBotStartleTapWindowMs();
+uint32_t MhaiBotStartleDurationMs();
 
 std::string_view MhaiBotSleepText(uint32_t elapsed_ms);
 uint16_t MhaiBotGroggyProgressPerMille(uint32_t elapsed_ms);

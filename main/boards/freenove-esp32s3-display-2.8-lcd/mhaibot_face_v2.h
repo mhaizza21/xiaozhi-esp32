@@ -46,6 +46,7 @@ public:
     void SetEmotion(Emotion emotion);
     void StartPetting();
     void StartGroggyWake();
+    void StartStartled();
     void CancelTransientAnimation();
 
     bool IsVisible() const { return visible_; }
@@ -53,7 +54,7 @@ public:
     Emotion GetEmotion() const { return target_emotion_; }
 
 private:
-    enum class TransientMode { kNone, kPetting, kGroggyWake };
+    enum class TransientMode { kNone, kPetting, kGroggyWake, kStartled };
 
     struct Pose {
         int left_x;
@@ -70,6 +71,7 @@ private:
     void StopTimer();
     void Tick(uint32_t elapsed_ms);
     void ApplyPose(const Pose& pose);
+    void ApplyEyeOpacity(lv_opa_t opa);
     void ApplySleepLabel(uint32_t elapsed_ms);
     void HideSleepLabel();
     void BeginTransitionTo(Emotion emotion);
@@ -78,6 +80,7 @@ private:
     Pose InterpolatePose(const Pose& from, const Pose& to, uint16_t progress_per_mille) const;
     Pose PettingPose() const;
     Pose GroggyPose(uint32_t elapsed_ms) const;
+    Pose StartledPose() const;
     static uint16_t ClampProgress(uint32_t elapsed_ms, uint32_t duration_ms);
     static int LerpInt(int from, int to, uint16_t progress_per_mille);
     static void TickTimerCb(lv_timer_t* timer);

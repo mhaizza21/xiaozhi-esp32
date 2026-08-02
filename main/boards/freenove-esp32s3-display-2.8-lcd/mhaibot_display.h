@@ -33,6 +33,7 @@ public:
     bool SetPanelPowered(bool powered);
     void StartPetting();
     void StartGroggyWake();
+    void StartStartled();
     void CancelTransientAnimation();
     bool IsGroggyWakeActive() const;
 
@@ -49,9 +50,18 @@ private:
     static bool IsErrorEmotion(const char* emotion);
     static bool IsWarningEmotion(const char* emotion);
     static bool IsNotificationEmotion(const char* emotion);
+    // Briefly shows a color emoji badge (top-right) alongside a transient
+    // face reaction (petting/startled/groggy-wake), so the reaction reads
+    // clearly even though the normal UI is eyes-only. Auto-hides after
+    // duration_ms via reaction_emoji_timer_.
+    void ShowReactionEmoji(const char* name, uint32_t duration_ms);
+    void HideReactionEmoji();
+    static void ReactionEmojiTimerCallback(void* arg);
 
     std::unique_ptr<MhaiBotFaceV2> face_;
     lv_obj_t* alert_label_ = nullptr;
+    lv_obj_t* reaction_emoji_ = nullptr;
+    esp_timer_handle_t reaction_emoji_timer_ = nullptr;
     bool face_visible_ = true;
     bool error_active_ = false;
     bool battery_low_ = false;
