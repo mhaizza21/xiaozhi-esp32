@@ -1,0 +1,49 @@
+name: Build MhaiBot Firmware
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/mhaibot-build.yml"
+      - "main/display/mhaibot_*"
+      - "main/boards/freenove-esp32s3-display-2.8-lcd/**"
+      - "scripts/tests/mhaibot_face_model_test.cc"
+      - "scripts/tests/test_mhaibot_face_model.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Freenove ESP32-S3 Display 2.8 LCD
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v6.0.2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run host tests
+        run: python -m unittest discover -s scripts/tests -v
+
+      - name: Build MhaiBot firmware
+        shell: bash
+        run: |
+          source $IDF_PATH/export.sh
+          python scripts/release.py freenove-esp32s3-display-2.8-lcd \
+            --name freenove-esp32s3-display-2.8-lcd
+
+      - name: Record firmware checksum
+        run: sha256sum build/merged-binary.bin | tee build/merged-binary.bin.sha256
+
+      - name: Upload MhaiBot firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: mhaibot-v2_freenove-esp32s3-display-2.8-lcd_${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            build/merged-binary.bin
+            build/merged-binary.bin.sha256
+          if-no-files-found: error
+
