@@ -453,13 +453,8 @@ void MhaiBotDisplay::UpdateStatusBar(bool update_all) {
     bool discharging = false;
     bool low_battery = false;
     if (Board::GetInstance().GetBatteryLevel(battery_level, charging, discharging)) {
-        if (!charging) {
-            const int level_index =
-                battery_level <= 0
-                    ? 0
-                    : (battery_level >= 100 ? 7 : 1 + ((battery_level - 1) * 6 / 99));
-            low_battery = discharging && level_index == 0;
-        }
+        low_battery =
+            MhaiBotBatteryLowWithHysteresis(battery_low_, charging, discharging, battery_level);
     }
 
     DisplayLockGuard lock(this);

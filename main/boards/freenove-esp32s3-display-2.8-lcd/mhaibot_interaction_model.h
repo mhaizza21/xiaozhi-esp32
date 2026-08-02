@@ -54,4 +54,13 @@ uint16_t MhaiBotGroggyProgressPerMille(uint32_t elapsed_ms);
 uint8_t MhaiBotGroggyBrightness(uint32_t elapsed_ms, uint8_t target_brightness);
 MhaiBotAlert MhaiBotResolveAlert(bool error_active, bool battery_low);
 
+int MhaiBotLowBatteryOnThresholdPercent();
+int MhaiBotLowBatteryOffThresholdPercent();
+// Hysteresis: turns on at/below the "on" threshold, turns off at/above the
+// "off" threshold, and holds its prior state in between -- avoids the icon
+// flickering on/off as the reading jitters around a single cutoff. Always
+// off while charging or not discharging (e.g. no battery detected).
+bool MhaiBotBatteryLowWithHysteresis(bool currently_low, bool charging, bool discharging,
+                                     int battery_level_percent);
+
 #endif  // MHAIBOT_INTERACTION_MODEL_H

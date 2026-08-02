@@ -35,6 +35,24 @@ int main() {
     assert(MhaiBotResolveAlert(true, false) == MhaiBotAlert::kError);
     assert(MhaiBotResolveAlert(true, true) == MhaiBotAlert::kError);
 
+    assert(MhaiBotLowBatteryOnThresholdPercent() == 15);
+    assert(MhaiBotLowBatteryOffThresholdPercent() == 20);
+    // 16% initial state -> OFF (above the on-threshold, nothing latched yet)
+    assert(!MhaiBotBatteryLowWithHysteresis(false, false, true, 16));
+    // 15% discharging -> ON (at the on-threshold)
+    assert(MhaiBotBatteryLowWithHysteresis(false, false, true, 15));
+    // 14% discharging -> ON (below the on-threshold)
+    assert(MhaiBotBatteryLowWithHysteresis(false, false, true, 14));
+    // 19% after low state -> remains ON (below the off-threshold)
+    assert(MhaiBotBatteryLowWithHysteresis(true, false, true, 19));
+    // 20% after low state -> OFF (at the off-threshold)
+    assert(!MhaiBotBatteryLowWithHysteresis(true, false, true, 20));
+    // 10% while charging -> OFF regardless of level
+    assert(!MhaiBotBatteryLowWithHysteresis(false, true, true, 10));
+    assert(!MhaiBotBatteryLowWithHysteresis(true, true, true, 10));
+    // Not discharging (e.g. no battery / on external power) -> OFF
+    assert(!MhaiBotBatteryLowWithHysteresis(true, false, false, 10));
+
     MhaiBotPetGestureDetector valid;
     assert(!valid.Update(true, 20, 60, 0));
     assert(!valid.Update(true, 70, 62, 300));

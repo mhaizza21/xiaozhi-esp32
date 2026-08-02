@@ -17,6 +17,8 @@ constexpr uint8_t kGroggyMinBrightness = 20;
 constexpr uint16_t kStartleTapMaxDriftPx = 24;
 constexpr uint32_t kStartleTapWindowMs = 700;
 constexpr uint32_t kStartleDurationMs = 700;
+constexpr int kLowBatteryOnThresholdPercent = 15;
+constexpr int kLowBatteryOffThresholdPercent = 20;
 
 bool IsPetZoneY(uint16_t y) {
     return y >= kPetZoneTop && y <= kPetZoneBottom;
@@ -219,4 +221,26 @@ MhaiBotAlert MhaiBotResolveAlert(bool error_active, bool battery_low) {
         return MhaiBotAlert::kBatteryLow;
     }
     return MhaiBotAlert::kNone;
+}
+
+int MhaiBotLowBatteryOnThresholdPercent() {
+    return kLowBatteryOnThresholdPercent;
+}
+
+int MhaiBotLowBatteryOffThresholdPercent() {
+    return kLowBatteryOffThresholdPercent;
+}
+
+bool MhaiBotBatteryLowWithHysteresis(bool currently_low, bool charging, bool discharging,
+                                     int battery_level_percent) {
+    if (charging || !discharging) {
+        return false;
+    }
+    if (!currently_low && battery_level_percent <= kLowBatteryOnThresholdPercent) {
+        return true;
+    }
+    if (currently_low && battery_level_percent >= kLowBatteryOffThresholdPercent) {
+        return false;
+    }
+    return currently_low;
 }
