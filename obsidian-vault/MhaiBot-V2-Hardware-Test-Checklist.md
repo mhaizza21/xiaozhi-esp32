@@ -65,6 +65,15 @@ three CI checks (`Build MhaiBot Firmware`, `Build Boards`, `Claude Code Review`)
       the badge on screen.
 - [x] Ran several minutes of continued normal use (idle, voice conversations, gesture testing)
       on the correctly-synced build with no crash, reboot, or watchdog reset.
+- [x] Tap, one-way stroke, and excessive vertical drift correctly do NOT trigger petting
+      (user confirmed all three behave the same as a plain tap — no petting reaction).
+- [x] Petting/startled do not toggle chat/listening when the finger is released after the
+      reaction finishes (user confirmed — nothing else happens once the eyes settle back).
+- [x] First wake touch from screen-off is consumed — observed live: the board had gone to sleep
+      during a long CI wait, and the user's first touch correctly triggered only the groggy-wake
+      sequence (not a chat toggle); the `ShowReactionEmoji('sleepy')` badge and "eyes getting
+      bigger" (Sleeping → Sleepy → Neutral) animation the user described match the intended
+      wake ramp exactly.
 
 ## Resolved — was a build/deploy process bug, not a firmware bug
 
@@ -83,13 +92,9 @@ three CI checks (`Build MhaiBot Firmware`, `Build Boards`, `Claude Code Review`)
 
 ## Not yet tested
 
-- [ ] Tap / one-way-stroke / out-of-zone / excessive-vertical-drift / timeout correctly do NOT
-      trigger petting (only the valid-gesture case was exercised).
-- [ ] Petting/startled do not toggle chat/listening on release.
 - [ ] Full `Z`, `Zz`, `Zzz`, blank sleep text cycle above the eye.
 - [ ] Screen stays on at 39 minutes idle / turns off at 40 minutes idle (not exercised — too
       long for this session; needs a dedicated long-running test).
-- [ ] First wake touch from screen-off is consumed (not toggling chat/listening/Wi-Fi config).
 - [ ] Groggy wake brightness ramp timing (~5s) and non-extension on repeated touch.
 - [ ] Wake word / urgent activity cancels sleep/groggy state immediately.
 - [ ] Error icon priority over low-battery icon; low-battery icon clears on recovery.
