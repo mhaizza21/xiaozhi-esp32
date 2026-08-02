@@ -73,7 +73,18 @@ three CI checks (`Build MhaiBot Firmware`, `Build Boards`, `Claude Code Review`)
       during a long CI wait, and the user's first touch correctly triggered only the groggy-wake
       sequence (not a chat toggle); the `ShowReactionEmoji('sleepy')` badge and "eyes getting
       bigger" (Sleeping → Sleepy → Neutral) animation the user described match the intended
-      wake ramp exactly.
+      wake ramp exactly. Serial log timestamps confirm the ramp duration matches spec exactly:
+      `PowerSaveTimer: Exiting power save mode` at 7975019ms →
+      `Backlight: Set brightness to 10` at 7980029ms = 5010ms elapsed, vs. the
+      `MhaiBotGroggyWakeDurationMs() == 5000` spec.
+      **Minor observed anomaly (not blocking):** that completion log was
+      `W Backlight: Brightness value (0) is too small, setting to default (10)` — i.e. the
+      restored brightness value was `0` and got floor-clamped to 10%, instead of restoring to
+      whatever the pre-sleep brightness actually was. Board had been through several sleep/wake
+      cycles this session (many reflashes + a long idle CI wait); `pre_sleep_brightness_` may be
+      capturing a stale/already-dimmed value across repeated cycles rather than a true "last
+      normal brightness". Self-corrects to a usable 10% floor, so not urgent, but worth a
+      dedicated look later.
 - [x] Speaker output explicitly confirmed by ear — user heard a clear, normal spoken reply.
       Observation (not a new bug, and not touched by this PR — audio/wake-word pipeline is
       explicitly out of scope): saying "Hi ESP" alone woke the board but the immediately-following
@@ -101,7 +112,7 @@ three CI checks (`Build MhaiBot Firmware`, `Build Boards`, `Claude Code Review`)
 - [ ] Full `Z`, `Zz`, `Zzz`, blank sleep text cycle above the eye.
 - [ ] Screen stays on at 39 minutes idle / turns off at 40 minutes idle (not exercised — too
       long for this session; needs a dedicated long-running test).
-- [ ] Groggy wake brightness ramp timing (~5s) and non-extension on repeated touch.
+- [ ] Non-extension of the groggy ramp on repeated touch (timing itself confirmed above).
 - [ ] Wake word / urgent activity cancels sleep/groggy state immediately.
 - [ ] Error icon priority over low-battery icon; low-battery icon clears on recovery.
 - [ ] No LVGL assertion / watchdog reset specifically during sleep/screen-off/wake cycles
