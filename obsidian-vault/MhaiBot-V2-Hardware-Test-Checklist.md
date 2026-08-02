@@ -1,10 +1,11 @@
 # MhaiBot V2 Hardware Test Checklist
 
-Firmware under test (updated on real hardware, 2026-08-02):
+Firmware under test (updated on real hardware, 2026-08-03):
 
-- Build commits: `653aa84` (Listening-pose fix) → `da90188` (petting/startle/reaction-emoji)
-- Built and flashed from the `C:\xmbot-v2-build` worktree (`idf.py build`)
-- Board: Freenove ESP32-S3 Display 2.8" LCD, connected on `COM4` this session
+- Build/push commits: `653aa84` (Listening-pose fix) → `da90188` (petting/startle/reaction-emoji)
+  → `256a30d` (docs) → `90c6f28` (CI restore, current).
+- Built and flashed from the `C:\xmbot-v2-build` worktree (`idf.py build`).
+- Board: Freenove ESP32-S3 Display 2.8" LCD, connected on `COM4` this session.
 - Flash method used: **individual pieces** (bootloader/partition-table/ota-data/app/assets at their
   own offsets), not a single merged image — this avoids re-erasing the NVS partition
   (`0x9000`–`0xd000`) and so preserves saved Wi-Fi credentials across reflashes:
@@ -18,7 +19,21 @@ esptool --chip esp32s3 --port COM4 -b 460800 write-flash --flash-mode dio --flas
   0x800000 build\generated_assets.bin
 ```
 
-Artifact provenance: local ESP-IDF build only. Not yet pushed to GitHub / run through CI.
+**Process note for next time:** `C:\xmbot-v2-build` is a separate git worktree from the main
+project folder — editing source in the project folder does NOT automatically update it. After
+committing `653aa84`, several rounds of "improve petting", "add startle gesture", "add reaction
+emoji" edits were made directly to the project folder but the build worktree was never
+re-synced (`git checkout <commit>`), so `idf.py build`/reflash cycles kept silently re-flashing
+the same unchanged `653aa84` binary. What looked like a "petting still just gets smaller" or a
+"reaction emoji works for groggy-wake but not petting/startled" bug was actually just repeatedly
+testing old code — the real startle-tap gesture was never on the device at all during that
+period (what read as a "startled" pose was the already-working double-tap → Listening pose).
+Fixed by explicitly `git checkout 90c6f28` in the build worktree and deleting the stale `.obj`
+files for the touched board sources before rebuilding. **Always verify the build worktree is on
+the exact source commit before trusting a "the fix isn't working" observation.**
+
+Artifact provenance: local ESP-IDF build; commit `90c6f28` is pushed to GitHub and passing all
+three CI checks (`Build MhaiBot Firmware`, `Build Boards`, `Claude Code Review`).
 
 ## Verified on real hardware this session
 
@@ -28,28 +43,33 @@ Artifact provenance: local ESP-IDF build only. Not yet pushed to GitHub / run th
       (previously dead code — `Application::HandleStateChangedEvent()` always called
       `SetEmotion("neutral")` on entering Listening; fixed board-locally in `mhaibot_display.cc`).
 - [x] Wi-Fi configuration screen still renders (eyes-only, no leftover chrome) when entered.
-- [x] Valid petting gesture (3 direction reversals, mid-screen) triggers a visibly distinct
-      thin, near-closed "content" eye squint with a soft glow shimmer (iterated twice on
-      direct user feedback — first version read as just "eyes got smaller").
-- [x] New startle gesture — three quick taps at the same spot (closest approximation of a
-      "hard knock" this touch controller supports; it has no pressure sensing) — triggers a
-      brief wide-eyed startled snap that relaxes back over ~700ms. User-confirmed pose change.
-- [x] Reaction emoji badge (top-right, real color emoji from the bundled
-      `noto-color-emoji_64` collection) correctly shows during groggy wake-up (`sleepy`).
-- [x] Ran ~4 minutes of continued normal use (idle + a full voice conversation) after the
-      reaction-emoji change with no crash, reboot, or watchdog reset.
+- [x] Valid petting gesture (3 direction reversals, mid-screen) triggers the improved thin,
+      near-closed "content" eye squint with a soft glow shimmer.
+- [x] Startle gesture (three quick taps at the same spot — the closest approximation of a
+      "hard knock" this touch controller supports, since it has no pressure sensing) triggers
+      the brief wide-eyed startled snap that relaxes back over ~700ms.
+- [x] **Reaction emoji badge confirmed working for all three reactions** — petting (`loving`),
+      startled (`shocked`), and groggy-wake (`sleepy`) — once tested against the correctly
+      synced build. Live serial log during this test showed `ShowReactionEmoji` resolving a
+      valid image pointer for both `'shocked'` and `'loving'`, and the user confirmed seeing
+      the badge on screen.
+- [x] Ran several minutes of continued normal use (idle, voice conversations, gesture testing)
+      on the correctly-synced build with no crash, reboot, or watchdog reset.
 
-## Known open issue — do not re-flag as new
+## Resolved — was a build/deploy process bug, not a firmware bug
 
-- [ ] **Reaction emoji does not show for petting or startled**, even though the eye-pose change
-      for both works correctly and both call the exact same `ShowReactionEmoji()` path as the
-      working groggy-wake case. Not yet root-caused. Diagnostic `ESP_LOGI` calls were left in
-      `MhaiBotDisplay::ShowReactionEmoji()` to speed up the next debugging session.
-- [ ] **One unexplained reboot** was observed by the user while testing gestures shortly after
-      the reaction-emoji feature was first flashed. Could not reproduce it again over ~4 minutes
-      of subsequent testing (including a full voice conversation) or find a panic/backtrace in
-      the serial log — but it was not conclusively ruled out as related to the emoji change
-      either. Treat as an open risk until reproduced and root-caused.
+- [x] ~~Reaction emoji does not show for petting or startled~~ — root-caused: the build
+      worktree was stale (see process note above), not a code defect. Confirmed fixed by
+      re-syncing the worktree and rebuilding; the diagnostic `ESP_LOGI` calls that were
+      temporarily added to `ShowReactionEmoji()` have been removed now that this is closed.
+
+## Still open
+
+- [ ] **One unexplained reboot** was observed by the user while testing gestures on the *stale*
+      build, before the worktree-sync issue was found. Never reproduced on the correctly-synced
+      build across several minutes of testing, and no panic/backtrace was ever captured. Given
+      the stale-build confusion explains most of that session's odd behavior, this is now lower
+      priority, but still not conclusively explained — watch for recurrence.
 
 ## Not yet tested
 

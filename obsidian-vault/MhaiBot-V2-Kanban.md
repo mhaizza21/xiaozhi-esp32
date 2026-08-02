@@ -17,18 +17,24 @@
       near-closed "content" squint + glow, not just smaller eyes).
 - [x] Add a startle gesture (triple-tap same spot) and reaction, plus a top-right color-emoji
       badge for petting/startled/groggy-wake reactions (commit `da90188`).
+- [x] Force-pushed the local (OneDrive) implementation over PR #3's old branch, restored 3 CI
+      workflow files the force-push had wiped, and confirmed all three CI checks pass on
+      commit `90c6f28` (`Build MhaiBot Firmware`, `Build Boards`, `Claude Code Review`).
+- [x] Root-caused and fixed the "reaction emoji only works for groggy-wake" issue — it was a
+      stale build worktree (`C:\xmbot-v2-build` never re-synced after `653aa84`), not a code
+      bug. Confirmed working for all three reactions after re-syncing and rebuilding; removed
+      the diagnostic logging.
 
 ## Hardware Validation Pending
 
 - [x] Flash and boot-verify on real hardware (multiple iterations this session, `COM4`).
-- [ ] Root-cause why the reaction emoji shows for groggy-wake but not petting/startled
-      (diagnostic logging left in `ShowReactionEmoji()`).
-- [ ] Reproduce/rule out one unexplained reboot observed during gesture testing.
+- [x] Reaction emoji confirmed working for petting/startled/groggy-wake (see above).
+- [ ] The one unexplained reboot from before the stale-build issue was found — never
+      reproduced on the correctly-synced build, still not conclusively explained. Lower
+      priority now but watch for recurrence.
 - [ ] Complete the remaining unchecked items in
       `obsidian-vault/MhaiBot-V2-Hardware-Test-Checklist.md` (40-minute screen-off timing,
       false-positive gesture rejection, alert priority, speaker heard by ear, etc.).
-- [ ] Push this branch to GitHub and run it through real CI (host tests + ESP-IDF build +
-      board matrix + review) — everything so far is local-only verification.
 - [ ] Keep PR/draft branch unmerged until every hardware checklist item is verified.
 
 ## Out of Scope

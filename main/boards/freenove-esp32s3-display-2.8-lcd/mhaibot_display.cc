@@ -285,15 +285,11 @@ void MhaiBotDisplay::SetupUI() {
 }
 
 void MhaiBotDisplay::ShowReactionEmoji(const char* name, uint32_t duration_ms) {
-    ESP_LOGI(TAG, "ShowReactionEmoji('%s') reaction_emoji_=%p current_theme_=%p", name,
-             reaction_emoji_, current_theme_);
     if (reaction_emoji_ == nullptr || current_theme_ == nullptr) {
         return;
     }
     auto emoji_collection = static_cast<LvglTheme*>(current_theme_)->emoji_collection();
-    ESP_LOGI(TAG, "ShowReactionEmoji emoji_collection=%p", emoji_collection.get());
     const LvglImage* image = emoji_collection != nullptr ? emoji_collection->GetEmojiImage(name) : nullptr;
-    ESP_LOGI(TAG, "ShowReactionEmoji image=%p", image);
     if (image == nullptr) {
         return;
     }
