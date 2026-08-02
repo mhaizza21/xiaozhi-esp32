@@ -29,12 +29,31 @@
 
 - [x] Flash and boot-verify on real hardware (multiple iterations this session, `COM4`).
 - [x] Reaction emoji confirmed working for petting/startled/groggy-wake (see above).
+- [x] All three GitHub CI checks green on latest commit (`Build MhaiBot Firmware`,
+      `Build Boards` — full 178-board matrix, `Claude Code Review`).
+- [x] Fixed a session-local `IDF_TARGET` env-leak from the unrelated C3 project (documented in
+      the checklist); added `C:\xmbot-v2-build\build-s3.ps1` wrapper to prevent recurrence.
+- [x] False-positive gesture rejection confirmed (tap / one-way stroke / vertical drift do not
+      trigger petting).
+- [x] Petting/startled confirmed not to toggle chat/listening on release.
+- [x] First wake touch from screen-off confirmed consumed (observed live via a real sleep
+      cycle during a long CI wait).
+- [x] Speaker output confirmed by ear. Noted an unrelated wake-word timing quirk (first
+      utterance right after "Hi ESP" sometimes not captured) — out of scope for this PR.
+- [x] Groggy-wake ramp timing confirmed ~5s from log timestamps; flagged a minor
+      brightness-restore anomaly (restores to a floor value instead of true pre-sleep
+      brightness) for future investigation.
+- [ ] In progress: 40-minute screen-off timing + `Zzz` sleep-text cycle + stability during
+      sleep, via one continuous ~40-minute idle observation (board must not be touched).
+- [ ] Wake word / urgent activity canceling groggy-wake immediately — needs precise timing,
+      planned right after the screen-off test.
+- [ ] Touch still responds after repeated sleep/wake cycles — planned right after.
+- [ ] Error vs. low-battery alert priority — cannot be simulated remotely; step-by-step manual
+      test instructions given to the user (Wi-Fi disconnect for error, real battery drain for
+      low-battery) to run whenever convenient, non-blocking.
 - [ ] The one unexplained reboot from before the stale-build issue was found — never
-      reproduced on the correctly-synced build, still not conclusively explained. Lower
+      reproduced on the correctly-synced build across extensive subsequent testing. Lower
       priority now but watch for recurrence.
-- [ ] Complete the remaining unchecked items in
-      `obsidian-vault/MhaiBot-V2-Hardware-Test-Checklist.md` (40-minute screen-off timing,
-      false-positive gesture rejection, alert priority, speaker heard by ear, etc.).
 - [ ] Keep PR/draft branch unmerged until every hardware checklist item is verified.
 
 ## Out of Scope
