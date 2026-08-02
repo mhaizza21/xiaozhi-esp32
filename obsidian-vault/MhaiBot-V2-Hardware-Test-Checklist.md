@@ -32,6 +32,16 @@ Fixed by explicitly `git checkout 90c6f28` in the build worktree and deleting th
 files for the touched board sources before rebuilding. **Always verify the build worktree is on
 the exact source commit before trusting a "the fix isn't working" observation.**
 
+**Second process note:** this machine's Claude Code session is rooted in the separate
+`xiaozhi-esp32` "main" worktree (used for the unrelated `mhaibot-servo-c3` ESP32-C3 project),
+whose local `.vscode/settings.json` sets `IDF_TARGET=esp32c3`. That value leaks into every new
+shell the session spawns regardless of working directory, which caused a `idf.py build` failure
+mid-session ("sdkconfig was generated for esp32s3, but IDF_TARGET is esp32c3"). Editing that
+other project's settings would break its own C3 workflow, so instead use
+`C:\xmbot-v2-build\build-s3.ps1 <idf.py args>` (e.g. `build-s3.ps1 build`) for all MhaiBot builds
+going forward — it explicitly forces `IDF_TARGET=esp32s3` before calling `idf.py`. Never call
+`idf.py` directly from a bare PowerShell session for this project.
+
 Artifact provenance: local ESP-IDF build; commit `90c6f28` is pushed to GitHub and passing all
 three CI checks (`Build MhaiBot Firmware`, `Build Boards`, `Claude Code Review`).
 
