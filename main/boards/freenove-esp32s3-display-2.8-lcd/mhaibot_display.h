@@ -66,14 +66,6 @@ private:
     bool error_active_ = false;
     bool battery_low_ = false;
     bool pending_error_status_ = false;
-    // Polled directly from WifiManager in UpdateStatusBar() (called every
-    // ~1s via MAIN_EVENT_CLOCK_TICK) rather than relying on
-    // Application::HandleNetworkDisconnectedEvent(), which never calls
-    // Alert()/SetEmotion() -- a real Wi-Fi drop was hardware-tested and
-    // confirmed to show no error icon via that path. Treated as an Error
-    // (same priority as error_active_) since it means the board can't
-    // actually do anything without connectivity.
-    bool network_disconnected_ = false;
     // Application::HandleStateChangedEvent() calls SetStatus(LISTENING)
     // immediately before SetEmotion("neutral") when entering the Listening
     // state, since core app code has no dedicated "listening" emotion call.

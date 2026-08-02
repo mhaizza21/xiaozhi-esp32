@@ -8,7 +8,6 @@
 #include <esp_err.h>
 #include <esp_log.h>
 #include <material_symbols.h>
-#include <wifi_manager.h>
 
 #include <cstring>
 
@@ -225,8 +224,7 @@ void MhaiBotDisplay::UpdateAlertLabel() {
     }
 
     auto* lvgl_theme = static_cast<LvglTheme*>(current_theme_);
-    const MhaiBotAlert alert =
-        MhaiBotResolveAlert(error_active_ || network_disconnected_, battery_low_);
+    const MhaiBotAlert alert = MhaiBotResolveAlert(error_active_, battery_low_);
     if (alert == MhaiBotAlert::kNone) {
         lv_obj_add_flag(alert_label_, LV_OBJ_FLAG_HIDDEN);
         return;
@@ -458,9 +456,6 @@ void MhaiBotDisplay::UpdateStatusBar(bool update_all) {
         low_battery =
             MhaiBotBatteryLowWithHysteresis(battery_low_, charging, discharging, battery_level);
     }
-
-    auto& wifi = WifiManager::GetInstance();
-    network_disconnected_ = !wifi.IsConfigMode() && !wifi.IsConnected();
 
     DisplayLockGuard lock(this);
     SetAlertState(error_active_, low_battery);
