@@ -325,7 +325,9 @@ class MhaiBotFaceModelTest(unittest.TestCase):
             self.assertIn(snippet, header + source)
 
         for snippet in (
-            "MhaiBotResolveAlert(error_active_, battery_low_)",
+            "MhaiBotResolveAlert(error_active_ || network_disconnected_, battery_low_)",
+            "MhaiBotBatteryLowWithHysteresis(battery_low_, charging, discharging, battery_level)",
+            "network_disconnected_ = !wifi.IsConfigMode() && !wifi.IsConnected();",
             "pending_error_status_ = IsErrorStatus(status);",
             "pending_error_status_ && (IsErrorEmotion(emotion) || IsWarningEmotion(emotion))",
             'lv_label_set_text(alert_label_, "!");',
