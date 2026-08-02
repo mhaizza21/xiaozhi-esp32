@@ -3,7 +3,8 @@
 Firmware under test (updated on real hardware, 2026-08-03):
 
 - Build/push commits: `653aa84` (Listening-pose fix) → `da90188` (petting/startle/reaction-emoji)
-  → `256a30d` (docs) → `90c6f28` (CI restore, current).
+  → `256a30d` (docs) → `90c6f28` (CI restore) → `bf21483` (low-battery hysteresis fix, current
+  stable) → `09998e1` (Wi-Fi disconnect alert fix, **reverted, see below**) → `c1ffb98` (revert).
 - Built and flashed from the `C:\xmbot-v2-build` worktree (`idf.py build`).
 - Board: Freenove ESP32-S3 Display 2.8" LCD, connected on `COM4` this session.
 - Flash method used: **individual pieces** (bootloader/partition-table/ota-data/app/assets at their
@@ -99,6 +100,49 @@ three CI checks (`Build MhaiBot Firmware`, `Build Boards`, `Claude Code Review`)
       re-syncing the worktree and rebuilding; the diagnostic `ESP_LOGI` calls that were
       temporarily added to `ShowReactionEmoji()` have been removed now that this is closed.
 
+## Alert lifecycle review (user-requested code audit)
+
+- [x] **Low-battery threshold bug — confirmed and fixed (`bf21483`).** `UpdateStatusBar()`'s old
+      `level_index` formula could only equal 0 (triggering low-battery) when `battery_level <= 0`
+      exactly — the icon never showed at any realistic threshold. Replaced with
+      `MhaiBotBatteryLowWithHysteresis()`: on at ≤15%, off at ≥20%, always off while charging.
+      Host-tested (6 scenarios incl. the exact cases requested: 14/15/16/19/20% and charging).
+      Flashed and boot-verified stable on hardware; **not yet tested against a real battery**
+      (still needs: drain below 15%, confirm icon, charge back up, confirm it clears).
+- [x] **Network-error call path traced (code review, no changes yet at that point).** Confirmed
+      `Application::Alert()` correctly calls `SetStatus()` then `SetEmotion()` in the order
+      `MhaiBotDisplay` needs, and the protocol-level failure path (`OnNetworkError` →
+      `MAIN_EVENT_ERROR` → `Alert(ERROR, ..., "cancel", ...)`) does show the icon correctly.
+      But `Application::HandleNetworkDisconnectedEvent()` (the raw Wi-Fi-drop handler) never
+      calls `Alert()` at all — only `UpdateStatusBar()`.
+- [x] **Confirmed on real hardware, not just by reading code:** changed the Wi-Fi password to
+      force a real disconnect. Board correctly detected it (`MQTT: ... Connection reset by
+      peer`, `MQTT disconnected, schedule reconnect`) and recovered — but the red `!` icon
+      **never appeared** at any point; user confirmed the eyes stayed normal throughout. This
+      confirms the code-review finding was real, not theoretical.
+- [x] **First fix attempt (`09998e1`) caused a 100%-reproducible boot crash — reverted
+      (`c1ffb98`).** Polled `WifiManager::GetInstance().IsConnected()` directly inside
+      `MhaiBotDisplay::UpdateStatusBar()` (board-local, to avoid touching shared
+      `application.cc`). Flashed fine, booted fine through Wi-Fi connect and activation, then
+      crashed **every single time**, at the exact same point (right as the first
+      `MAIN_EVENT_CLOCK_TICK` calls `UpdateStatusBar()` after activation):
+      ```
+      Guru Meditation Error: Core 1 panic'ed (InstrFetchProhibited). Exception was unhandled.
+      PC : 0x00000000 ... EXCVADDR: 0x00000000
+      ```
+      A jump to a null/garbage address — reproduced identically twice in a row before being
+      caught and reverted. Not yet root-caused; leading theory is a static-initialization-order
+      issue with `WifiManager`'s singleton when accessed from a new translation unit
+      (`mhaibot_display.cc`) that `wifi_board.cc`'s existing `GetNetworkStateIcon()` doesn't hit
+      the same way, but this needs real investigation, not another blind attempt on live
+      hardware. **Do not re-attempt this exact approach without figuring out why it crashes
+      first** — reverted commit `09998e1` has the attempted code for reference.
+- [ ] **The underlying gap (no error icon on raw Wi-Fi disconnect) is still open**, reverted
+      back to unfixed. Options for a real fix, not yet decided: (a) debug why the direct
+      `WifiManager` poll crashed and retry safely, (b) find a different, safer way to detect
+      disconnection board-locally, or (c) accept this needs a shared `application.cc` change
+      and take it out of this board-local PR's scope entirely.
+
 ## Still open
 
 - [ ] **One unexplained reboot** was observed by the user while testing gestures on the *stale*
@@ -106,6 +150,7 @@ three CI checks (`Build MhaiBot Firmware`, `Build Boards`, `Claude Code Review`)
       build across several minutes of testing, and no panic/backtrace was ever captured. Given
       the stale-build confusion explains most of that session's odd behavior, this is now lower
       priority, but still not conclusively explained — watch for recurrence.
+- [ ] Network-disconnect error icon gap (see above) — reverted, needs a real fix attempt.
 
 ## Not yet tested
 
