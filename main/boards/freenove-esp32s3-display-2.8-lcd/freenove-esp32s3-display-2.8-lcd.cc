@@ -11,6 +11,7 @@
 #include "mcp_server.h"
 #include "mhaibot_display.h"
 #include "mhaibot_interaction_model.h"
+#include "servo_bridge.h"
 #include "wifi_board.h"
 
 #include <driver/i2c_master.h>
@@ -105,6 +106,7 @@ private:
     std::atomic<uint8_t> groggy_target_brightness_{75};
     std::atomic<uint8_t> pre_sleep_brightness_{100};
     std::atomic<bool> sleeping_face_active_{false};
+    ServoBridge servo_bridge_;
 
     void InitializeBatteryMonitor() {
         adc_battery_monitor_ =
@@ -379,7 +381,92 @@ private:
                                       DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
     }
 
-    void InitializeTools() {}
+    void InitializeServoBridge() {
+        servo_bridge_.Initialize();
+    }
+
+    void InitializeTools() {
+        auto& mcp_server = McpServer::GetInstance();
+
+        mcp_server.AddTool("self.head.center", "把头部转正到中间位置（pan=90, tilt=90）。",
+            PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
+                auto result = servo_bridge_.CenterHead();
+                if (result == ServoBridge::Result::kNotReady) {
+                    throw std::runtime_error("Head controller is not ready yet (no reply from the servo board)");
+                }
+                return true;
+            });
+
+        mcp_server.AddTool("self.head.move",
+            "把头部转到指定角度。pan 是左右角度（" + std::to_string(ServoBridge::kPanMin) + "-" +
+                std::to_string(ServoBridge::kPanMax) + "，90 为正中），tilt 是上下角度（" +
+                std::to_string(ServoBridge::kTiltMin) + "-" + std::to_string(ServoBridge::kTiltMax) + "，90 为正中）。",
+            PropertyList({
+                Property("pan", kPropertyTypeInteger, ServoBridge::kPanMin, ServoBridge::kPanMax),
+                Property("tilt", kPropertyTypeInteger, ServoBridge::kTiltMin, ServoBridge::kTiltMax),
+            }), [this](const PropertyList& properties) -> ReturnValue {
+                int pan = properties["pan"].value<int>();
+                int tilt = properties["tilt"].value<int>();
+                auto result = servo_bridge_.MoveHead(pan, tilt);
+                if (result == ServoBridge::Result::kNotReady) {
+                    throw std::runtime_error("Head controller is not ready yet (no reply from the servo board)");
+                }
+                if (result == ServoBridge::Result::kInvalidRange) {
+                    throw std::runtime_error("pan/tilt out of the allowed safe range");
+                }
+                return true;
+            });
+
+        // pan/tilt direction (which way "left"/"up" physically moves the
+        // head) depends on how the SG90 horns are mounted on the hardware
+        // and has not been verified on a real unit yet. Confirm on
+        // hardware and swap the +/- offsets below if left/right or
+        // up/down come out mirrored.
+        mcp_server.AddTool("self.head.look_left", "把头部转向左边。",
+            PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
+                auto result = servo_bridge_.MoveHead(ServoBridge::kCenterPan - 30, ServoBridge::kCenterTilt);
+                if (result == ServoBridge::Result::kNotReady) {
+                    throw std::runtime_error("Head controller is not ready yet (no reply from the servo board)");
+                }
+                return true;
+            });
+
+        mcp_server.AddTool("self.head.look_right", "把头部转向右边。",
+            PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
+                auto result = servo_bridge_.MoveHead(ServoBridge::kCenterPan + 30, ServoBridge::kCenterTilt);
+                if (result == ServoBridge::Result::kNotReady) {
+                    throw std::runtime_error("Head controller is not ready yet (no reply from the servo board)");
+                }
+                return true;
+            });
+
+        mcp_server.AddTool("self.head.look_up", "把头部抬起来看上面。",
+            PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
+                auto result = servo_bridge_.MoveHead(ServoBridge::kCenterPan, ServoBridge::kCenterTilt - 20);
+                if (result == ServoBridge::Result::kNotReady) {
+                    throw std::runtime_error("Head controller is not ready yet (no reply from the servo board)");
+                }
+                return true;
+            });
+
+        mcp_server.AddTool("self.head.look_down", "把头部低下去看下面。",
+            PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
+                auto result = servo_bridge_.MoveHead(ServoBridge::kCenterPan, ServoBridge::kCenterTilt + 20);
+                if (result == ServoBridge::Result::kNotReady) {
+                    throw std::runtime_error("Head controller is not ready yet (no reply from the servo board)");
+                }
+                return true;
+            });
+
+        mcp_server.AddTool("self.head.nod", "点头，表示同意或确认。",
+            PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
+                auto result = servo_bridge_.Nod();
+                if (result == ServoBridge::Result::kNotReady) {
+                    throw std::runtime_error("Head controller is not ready yet (no reply from the servo board)");
+                }
+                return true;
+            });
+    }
 
 public:
     FreenoveESP32S3Display() : boot_button_(BOOT_BUTTON_GPIO) {
@@ -390,6 +477,7 @@ public:
         InitializePowerSaveTimer();
         InitializeTouch();
         InitializeButtons();
+        InitializeServoBridge();
         InitializeTools();
         GetBacklight()->SetBrightness(100);
     }

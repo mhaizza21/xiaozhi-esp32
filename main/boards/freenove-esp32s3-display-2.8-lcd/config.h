@@ -50,4 +50,12 @@
 #define DISPLAY_BACKLIGHT_OUTPUT_INVERT false
 #define DISPLAY_SPI_MODE      0
 
+// ServoBridge: onboard "UART" 4-pin connector (RXD/TXD/GND/5V).
+// This is UART0 (U0TXD/U0RXD) per the official schematic; console output
+// must stay on USB Serial/JTOG (see config.json) for this link to be usable.
+#define SERVO_BRIDGE_UART_PORT    UART_NUM_0
+#define SERVO_BRIDGE_UART_TX_PIN  GPIO_NUM_43
+#define SERVO_BRIDGE_UART_RX_PIN  GPIO_NUM_44
+#define SERVO_BRIDGE_UART_BAUD    115200
+
 #endif  // _BOARD_CONFIG_H_
