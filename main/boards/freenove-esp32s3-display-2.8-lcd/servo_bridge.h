@@ -91,6 +91,7 @@ private:
     void TaskLoop();
 
     void ProcessLine(const std::string& line, int64_t now_us);
+    void MarkLinkAlive(int64_t now_us, const char* reason);
     void DrainTxQueue();
     bool EnqueueCommand(const std::string& line);
     void UpdateTimeouts(int64_t now_us);

@@ -125,18 +125,31 @@ void ServoBridge::TaskLoop() {
     }
 }
 
+// Marks the link alive as of now_us and, only on an actual state change,
+// logs the transition. This is the ONLY place last_rx_us_ advances, and it
+// is only called for lines that parsed as a recognized protocol reply
+// (READY/PONG/OK,*/ERR,*) — never for raw unrecognized bytes (e.g. the
+// C3 ROM bootloader's boot banner, which is also physically received on
+// this same UART since it shares pins with the C3's own UART0 before its
+// app remaps them). Counting that banner as "alive" was the original bug:
+// it kept resetting the liveness timer through every C3 reset, so a real
+// C3 outage could never actually cross the timeout threshold.
+void ServoBridge::MarkLinkAlive(int64_t now_us, const char* reason) {
+    last_rx_us_ = now_us;
+    const LinkState previous = state_.exchange(LinkState::kReady, std::memory_order_relaxed);
+    if (previous != LinkState::kReady) {
+        ESP_LOGI(TAG, "servo link: %s -> ready (%s)",
+                 previous == LinkState::kAwaitingReady ? "awaiting_ready" : "timed_out", reason);
+    }
+}
+
 void ServoBridge::ProcessLine(const std::string& line, int64_t now_us) {
     if (line.empty()) {
         return;
     }
-    last_rx_us_ = now_us;
 
     if (line == "READY") {
-        const bool was_ready = state_.load(std::memory_order_relaxed) == LinkState::kReady;
-        state_.store(LinkState::kReady, std::memory_order_relaxed);
-        if (!was_ready) {
-            ESP_LOGI(TAG, "servo link ready (C3 sent READY)");
-        }
+        MarkLinkAlive(now_us, "READY");
         return;
     }
 
@@ -146,33 +159,40 @@ void ServoBridge::ProcessLine(const std::string& line, int64_t now_us) {
         // servos), so it is just as valid a "ready" signal as READY
         // itself. This is what lets the link recover after an S3-only
         // reset, where the already-booted C3 will never resend READY.
-        if (state_.load(std::memory_order_relaxed) != LinkState::kReady) {
-            state_.store(LinkState::kReady, std::memory_order_relaxed);
-            ESP_LOGI(TAG, "servo link ready (PONG from an already-booted C3)");
-        }
+        MarkLinkAlive(now_us, "PONG");
         return;
     }
 
     if (line.rfind("OK,", 0) == 0) {
-        state_.store(LinkState::kReady, std::memory_order_relaxed);
+        MarkLinkAlive(now_us, "OK");
         return;
     }
 
     if (line.rfind("ERR,", 0) == 0) {
-        state_.store(LinkState::kReady,
-                     std::memory_order_relaxed);  // C3 is alive, it just rejected the command
+        // Still a well-formed protocol reply — the C3 is alive and parsed
+        // a complete line, it just rejected the command — so this counts
+        // as valid activity too, unlike the unrecognized-noise case below.
+        MarkLinkAlive(now_us, "ERR");
         MaybeWarn(now_us, ("servo link: C3 reported " + line).c_str());
         return;
     }
 
-    MaybeWarn(now_us, ("servo link: unrecognized reply: " + line).c_str());
+    // Not a recognized protocol reply: most commonly the C3's own ROM
+    // bootloader banner leaking onto this UART during a C3 reset (see the
+    // comment on MarkLinkAlive), or electrical noise from a reset pulse.
+    // Deliberately does not touch last_rx_us_ or state_.
+    MaybeWarn(now_us, ("servo link: unrecognized reply (ignored, not counted as alive): " + line).c_str());
 }
 
 void ServoBridge::UpdateTimeouts(int64_t now_us) {
     if (state_.load(std::memory_order_relaxed) == LinkState::kReady &&
         (now_us - last_rx_us_) > kLinkTimeoutUs) {
         state_.store(LinkState::kTimedOut, std::memory_order_relaxed);
-        MaybeWarn(now_us, "servo link: no reply from C3, marking not ready");
+        // Transition logs are unconditional (not MaybeWarn-rate-limited):
+        // this fires exactly once per ready->timed_out edge, so an unlucky
+        // recent unrelated warning must never be able to swallow it.
+        ESP_LOGW(TAG, "servo link: ready -> timed_out (no valid reply from C3 in over %lld ms)",
+                 static_cast<long long>(kLinkTimeoutUs / 1000));
     }
 
     if ((now_us - last_ping_sent_us_) > kPingIntervalUs) {
