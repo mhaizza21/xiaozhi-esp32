@@ -5,6 +5,7 @@
 #include "board.h"
 #include "display.h"
 #include "mcp_server.h"
+#include "mic_diagnostic.h"
 #include "mqtt_protocol.h"
 #include "settings.h"
 #include "system_info.h"
@@ -160,6 +161,12 @@ void Application::Initialize() {
 
     // Start network asynchronously
     board.StartNetwork();
+
+    // Only safe to register here, not earlier: board.StartNetwork() has by
+    // this point synchronously created the default event loop (verified
+    // via WifiBoard::StartNetwork() -> WifiManager::Initialize() for this
+    // board's network path). A no-op when CONFIG_MIC_DIAGNOSTIC is off.
+    MicDiagnostic::GetInstance().StartNetworkMonitoring();
 
     // Update the status bar immediately to show the network state
     display->UpdateStatusBar(true);

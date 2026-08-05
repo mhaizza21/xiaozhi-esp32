@@ -3,6 +3,7 @@
 #include "board.h"
 #include "settings.h"
 #include "system_info.h"
+#include "network_activity_probe.h"
 
 #include <esp_log.h>
 #include <arpa/inet.h>
@@ -25,6 +26,12 @@ bool WebsocketProtocol::SendAudio(std::unique_ptr<AudioStreamPacket> packet) {
     if (websocket_ == nullptr || !websocket_->IsConnected()) {
         return false;
     }
+
+    // Diagnostic-only observability (temporary, see network_activity_probe.h):
+    // records that a production audio send is about to hit the radio, so
+    // mic_diagnostic.cc can correlate its own UDP ENOMEM events against
+    // this. No behavior effect: a no-op when CONFIG_MIC_DIAGNOSTIC is off.
+    NetworkActivityProbe::NoteWebsocketAudioSend();
 
     if (version_ == 2) {
         std::string serialized;

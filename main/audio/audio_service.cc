@@ -1,6 +1,9 @@
 #include "audio_service.h"
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <cstring>
+
+#include "mic_diagnostic.h"
 
 #define RATE_CVT_CFG(_src_rate, _dest_rate, _channel)        \
     (esp_ae_rate_cvt_cfg_t)                                  \
@@ -117,6 +120,9 @@ void AudioService::Initialize(AudioCodec* codec) {
         .skip_unhandled_events = true,
     };
     esp_timer_create(&audio_power_timer_args, &audio_power_timer_);
+
+    // No-op unless CONFIG_MIC_DIAGNOSTIC is enabled; see mic_diagnostic.h.
+    MicDiagnostic::GetInstance().Initialize();
 }
 
 void AudioService::Start() {
@@ -199,6 +205,13 @@ bool AudioService::ReadAudioData(std::vector<int16_t>& data, int sample_rate, in
         if (!codec_->InputData(data)) {
             return false;
         }
+        // Diagnostic tap A: raw PCM as read from the codec, before resample.
+        // No-op unless CONFIG_MIC_DIAGNOSTIC is enabled and a capture is
+        // currently running; see mic_diagnostic.h for the threading contract.
+        const uint32_t diag_frame_id = MicDiagnostic::GetInstance().NextSourceFrameId();
+        const int64_t diag_timestamp_us = esp_timer_get_time();
+        MicDiagnostic::GetInstance().TapRaw(data.data(), data.size(), diag_frame_id,
+                                             diag_timestamp_us);
         if (input_resampler_ != nullptr) {
             std::lock_guard<std::mutex> lock(input_resampler_mutex_);
             uint32_t in_sample_num = data.size() / codec_->input_channels();
@@ -210,6 +223,11 @@ bool AudioService::ReadAudioData(std::vector<int16_t>& data, int sample_rate, in
                                    (esp_ae_sample_t)resampled.data(), &actual_output);
             resampled.resize(actual_output * codec_->input_channels());
             data = std::move(resampled);
+            // Diagnostic tap B: same source_frame_id as tap A above, so a
+            // receiver can prove these two frames came from the same
+            // ReadAudioData() call despite differing sample counts/rates.
+            MicDiagnostic::GetInstance().TapResampled(data.data(), data.size(), diag_frame_id,
+                                                       esp_timer_get_time());
         }
     } else {
         data.resize(samples * codec_->input_channels());
