@@ -942,6 +942,35 @@ config AUDIO_DEBUG_UDP_SERVER
     help
         UDP server address, format: IP:PORT, used to receive audio debugging data
 
+config MIC_DIAGNOSTIC
+    bool "Enable temporary mic diagnostic capture (passive audio tap)"
+    default n
+    help
+        Adds a passive, lock-free, non-blocking tap on the audio input
+        pipeline (pre-resample and post-resample PCM) and streams it over
+        UDP to a host for offline WAV export and analysis. The tap never
+        blocks or locks in AudioInputTask; a separate low-priority sender
+        task owns all network I/O. Captures once per boot: the capture
+        window opens a fixed number of audio samples after the first real
+        PCM frame is observed (a 500ms warm-up that excludes the codec
+        input-enable transient), not at a fixed delay after Wi-Fi connects.
+        Does not alter production gain/NS/AGC/AEC/VAD. Intended to be
+        removed after diagnosis; disabled by default. Requires
+        MIC_DIAGNOSTIC_UDP_SERVER to be set to a reachable receiver.
+
+config MIC_DIAGNOSTIC_UDP_SERVER
+    string "Mic diagnostic UDP server address"
+    default "192.0.2.1:9100"
+    depends on MIC_DIAGNOSTIC
+    help
+        IP:PORT of the host machine running the diagnostic receiver script.
+
+        The default is the RFC 5737 documentation address 192.0.2.1, which
+        is NOT routable and exists only as a placeholder. You MUST override
+        this with the actual IP:PORT of your receiver host before enabling
+        MIC_DIAGNOSTIC, otherwise every capture packet is sent to an
+        unreachable destination and no audio is received.
+
 config RECEIVE_CUSTOM_MESSAGE
     bool "Enable Custom Message Reception"
     default n
