@@ -1,6 +1,7 @@
 #ifndef MHAIBOT_FACE_V2_H
 #define MHAIBOT_FACE_V2_H
 
+#include "eye/eye_intent_mailbox.h"
 #include "eye/lvgl_eye_renderer.h"
 
 #include <lvgl.h>
@@ -94,6 +95,10 @@ private:
     lv_obj_t* sleep_label_ = nullptr;
     lv_timer_t* tick_timer_ = nullptr;
     LVGLEyeRenderer renderer_;
+    // Slice 2 (cutover A): mailbox exists and is consumed per tick, but
+    // legacy ResolveRenderedPose remains sole pixel authority (09 §"Dual-
+    // path mailbox / cutover sequence" step A). Nothing publishes yet.
+    EyeIntentMailbox eye_intent_mailbox_;
     lv_color_t eye_color_;
     Pose current_pose_{};
     Pose transition_from_{};

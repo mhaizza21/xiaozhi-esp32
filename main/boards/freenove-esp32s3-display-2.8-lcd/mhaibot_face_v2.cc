@@ -196,6 +196,14 @@ void MhaiBotFaceV2::BeginTransitionTo(Emotion emotion) {
 void MhaiBotFaceV2::Tick(uint32_t elapsed_ms) {
     ++frame_;
 
+    // Slice 2: consume the mailbox each tick so it is exercised from a real
+    // LVGL-safe context, but nothing publishes yet and legacy pose
+    // resolution remains pixel authority until Slice 11.
+    EyeIntent mailbox_intent{};
+    if (eye_intent_mailbox_.ConsumeLatest(&mailbox_intent)) {
+        (void)mailbox_intent;
+    }
+
     if (transition_elapsed_ms_ < config_.transition_ms) {
         transition_elapsed_ms_ += elapsed_ms;
     }
