@@ -1,6 +1,8 @@
 #ifndef MHAIBOT_FACE_V2_H
 #define MHAIBOT_FACE_V2_H
 
+#include "eye/lvgl_eye_renderer.h"
+
 #include <lvgl.h>
 
 #include <cstdint>
@@ -70,8 +72,7 @@ private:
     void StartTimer();
     void StopTimer();
     void Tick(uint32_t elapsed_ms);
-    void ApplyPose(const Pose& pose);
-    void ApplyEyeOpacity(lv_opa_t opa);
+    void ApplyPose(const Pose& pose, lv_opa_t opa);
     void ApplySleepLabel(uint32_t elapsed_ms);
     void HideSleepLabel();
     void BeginTransitionTo(Emotion emotion);
@@ -92,6 +93,7 @@ private:
     lv_obj_t* right_eye_ = nullptr;
     lv_obj_t* sleep_label_ = nullptr;
     lv_timer_t* tick_timer_ = nullptr;
+    LVGLEyeRenderer renderer_;
     lv_color_t eye_color_;
     Pose current_pose_{};
     Pose transition_from_{};
