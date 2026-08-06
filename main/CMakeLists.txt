@@ -871,6 +871,13 @@ file(GLOB BOARD_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD_DIR}/*.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD_DIR}/*.c
 )
+# Freenove eye-animation extract (Slice 0+): board-local eye/*.cc only.
+# Scoped to BOARD_DIR so other boards are unaffected.
+file(GLOB BOARD_EYE_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD_DIR}/eye/*.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD_DIR}/eye/*.c
+)
+list(APPEND BOARD_SOURCES ${BOARD_EYE_SOURCES})
 list(APPEND SOURCES ${BOARD_SOURCES})
 
 # Select one audio engine for each chip family

@@ -1,9 +1,11 @@
 #include "mhaibot_face_v2.h"
 
+#include "eye/eye_pose_adapter.h"
 #include "mhaibot_interaction_model.h"
 
 #include <esp_log.h>
 
+#include <cassert>
 #include <string_view>
 
 #define TAG "MhaiBotFaceV2"
@@ -252,6 +254,21 @@ void MhaiBotFaceV2::ApplyPose(const Pose& pose) {
         !lv_obj_is_valid(right_eye_)) {
         return;
     }
+
+#ifndef NDEBUG
+    // Slice 0: Pose ↔ EyeFrame dual-check only. LVGL writes stay on legacy Pose
+    // (ApplyPose remains pixel authority). ADR-003: sleep_label_ / Show/Hide /
+    // backlight stay outside any future LVGLEyeRenderer.
+    const FaceV2Pose adapter_pose{pose.left_x, pose.right_x, pose.y,
+                                  pose.width,  pose.height,  pose.radius};
+    const EyeFrame frame = PoseToEyeFrame(adapter_pose);
+    const FaceV2Pose roundtrip = EyeFrameToPose(frame);
+    assert(roundtrip.left_x == pose.left_x && roundtrip.right_x == pose.right_x &&
+           roundtrip.y == pose.y && roundtrip.width == pose.width &&
+           roundtrip.height == pose.height && roundtrip.radius == pose.radius);
+    (void)frame;
+#endif
+
     lv_obj_set_size(left_eye_, pose.width, pose.height);
     lv_obj_set_size(right_eye_, pose.width, pose.height);
     lv_obj_set_style_radius(left_eye_, pose.radius, 0);
