@@ -1,5 +1,6 @@
 #include "mhaibot_display.h"
 
+#include "application.h"
 #include "assets/lang_config.h"
 #include "board.h"
 #include "lvgl_theme.h"
@@ -359,6 +360,10 @@ void MhaiBotDisplay::SetEmotion(const char* emotion) {
     SetAlertState(is_error, battery_low_);
     pending_error_status_ = false;
     face_->SetEmotion(force_listening_pose ? MhaiBotFaceV2::Emotion::kListening : ToFaceEmotion(emotion));
+    // Slice 3: shadow-publish in parallel with the legacy SetEmotion call
+    // above. Mailbox-only; does not affect pixels (dual-path step B start).
+    face_->PublishIntent(eye_activity_adapter_.FromDeviceState(
+        Application::GetInstance().GetDeviceState(), emotion, face_->IsGroggyWakeActive()));
     // Stop any GIF before showing the face so LVGL does not keep animating
     // a hidden emoji image.
     if (gif_controller_) {

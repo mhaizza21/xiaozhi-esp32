@@ -183,6 +183,10 @@ bool MhaiBotFaceV2::IsGroggyWakeActive() const {
     return transient_mode_ == TransientMode::kGroggyWake;
 }
 
+void MhaiBotFaceV2::PublishIntent(const EyeIntent& intent) {
+    eye_intent_mailbox_.Publish(intent);
+}
+
 void MhaiBotFaceV2::BeginTransitionTo(Emotion emotion) {
     transition_from_ = current_pose_;
     transition_elapsed_ms_ = 0;

@@ -2,6 +2,7 @@
 #define MHAIBOT_DISPLAY_H
 
 #include "display/lcd_display.h"
+#include "eye/eye_activity_adapter.h"
 #include "mhaibot_face_v2.h"
 
 #include <memory>
@@ -59,6 +60,10 @@ private:
     static void ReactionEmojiTimerCallback(void* arg);
 
     std::unique_ptr<MhaiBotFaceV2> face_;
+    // Slice 3 (dual-path step B start): shadow-publishes an EyeIntent in
+    // parallel with face_->SetEmotion(...). Pure/stateless; does not affect
+    // pixels (09 / ADR-002).
+    EyeActivityAdapter eye_activity_adapter_;
     lv_obj_t* alert_label_ = nullptr;
     lv_obj_t* reaction_emoji_ = nullptr;
     esp_timer_handle_t reaction_emoji_timer_ = nullptr;

@@ -56,6 +56,12 @@ public:
     bool IsGroggyWakeActive() const;
     Emotion GetEmotion() const { return target_emotion_; }
 
+    // Slice 3 (dual-path step B start): thread-safe shadow-publish entry
+    // point (02 façade). Any task may call this; it only stores the latest
+    // snapshot in the mailbox and does not affect pixels — legacy pose
+    // resolution remains sole pixel authority until Slice 11.
+    void PublishIntent(const EyeIntent& intent);
+
 private:
     enum class TransientMode { kNone, kPetting, kGroggyWake, kStartled };
 
@@ -95,9 +101,10 @@ private:
     lv_obj_t* sleep_label_ = nullptr;
     lv_timer_t* tick_timer_ = nullptr;
     LVGLEyeRenderer renderer_;
-    // Slice 2 (cutover A): mailbox exists and is consumed per tick, but
-    // legacy ResolveRenderedPose remains sole pixel authority (09 §"Dual-
-    // path mailbox / cutover sequence" step A). Nothing publishes yet.
+    // Consumed per tick (Slice 2) and shadow-published by the display owner
+    // via PublishIntent (Slice 3). Legacy ResolveRenderedPose remains sole
+    // pixel authority until Slice 11 (09 §"Dual-path mailbox / cutover
+    // sequence").
     EyeIntentMailbox eye_intent_mailbox_;
     lv_color_t eye_color_;
     Pose current_pose_{};
