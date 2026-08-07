@@ -3,10 +3,14 @@
 
 class MhaiBotDisplay;
 
-// Slice 11B: engineer-only UART console command for runtime PixelSource
-// control during hardware bring-up/soak testing (09 Slice 11B). This board
-// does not already run a console REPL, so this also starts one (matching
-// the existing esp_console pattern used by boards/sensecap-watcher).
+// Slice 11B: engineer-only console command for runtime PixelSource control
+// during hardware bring-up/soak testing (09 Slice 11B). This board does
+// not already run a console REPL, so this also starts one, over the
+// native USB-Serial/JTAG controller -- this board's only host-visible
+// serial transport (no separate UART-to-USB bridge chip). The project's
+// console primary channel (sdkconfig) must be set to USB Serial/JTAG to
+// match; see the .cc for the hardware-validation root cause this was
+// fixed against.
 //
 // Registers a single command:
 //   eye_pixel_source legacy   -- MhaiBotFaceV2::PixelSource::kLegacy

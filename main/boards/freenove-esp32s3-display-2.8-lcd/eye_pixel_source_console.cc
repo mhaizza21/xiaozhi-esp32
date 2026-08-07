@@ -45,11 +45,22 @@ int HandleEyePixelSourceCommand(void* context, int argc, char** argv) {
 void RegisterEyePixelSourceConsole(MhaiBotDisplay* display) {
     static bool repl_started = false;
     if (!repl_started) {
+        // Slice 11B hardware validation fix: this board exposes only its
+        // native USB-Serial/JTAG controller to the host (no separate
+        // UART-to-USB bridge chip; confirmed by the enumerated
+        // VID_303A&PID_1001 device). The project's console primary channel
+        // (sdkconfig ESP_CONSOLE_UART_NUM) must match this REPL's backend
+        // for `idf.py monitor` input to actually reach it -- a UART-backed
+        // REPL here was unreachable (output visible via the log mirror,
+        // input silently dropped), producing "Writing to serial is timing
+        // out." See the Slice 11B hardware investigation for the full
+        // root-cause analysis.
         esp_console_repl_t* repl = nullptr;
         esp_console_repl_config_t repl_config = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
         repl_config.prompt = "mhaibot>";
-        esp_console_dev_uart_config_t hw_config = ESP_CONSOLE_DEV_UART_CONFIG_DEFAULT();
-        ESP_ERROR_CHECK(esp_console_new_repl_uart(&hw_config, &repl_config, &repl));
+        esp_console_dev_usb_serial_jtag_config_t hw_config =
+            ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
+        ESP_ERROR_CHECK(esp_console_new_repl_usb_serial_jtag(&hw_config, &repl_config, &repl));
         ESP_ERROR_CHECK(esp_console_start_repl(repl));
         repl_started = true;
     }
