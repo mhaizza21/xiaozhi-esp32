@@ -327,23 +327,36 @@ void MhaiBotFaceV2::ApplyPose(const Pose& pose, lv_opa_t opa) {
     const FaceV2Pose adapter_pose{pose.left_x, pose.right_x, pose.y,
                                   pose.width,  pose.height,  pose.radius};
     const float opacity = static_cast<float>(opa) / 255.0f;
-    const EyeFrame frame = PoseToEyeFrame(adapter_pose, opacity);
+    const EyeFrame legacy_frame = PoseToEyeFrame(adapter_pose, opacity);
 
 #ifndef NDEBUG
-    // Round-trip check runs on the canonical (pre-blink) frame — this is
-    // also the Slice 9 Option A comparison stage, so blink must not be
-    // folded in before it.
-    const FaceV2Pose roundtrip = EyeFrameToPose(frame);
-    assert(roundtrip.left_x == pose.left_x && roundtrip.right_x == pose.right_x &&
-           roundtrip.y == pose.y && roundtrip.width == pose.width &&
-           roundtrip.height == pose.height && roundtrip.radius == pose.radius);
+    // Round-trip check only holds for the legacy Pose->EyeFrame conversion
+    // — it asserts `legacy_frame` reconstructs `pose` exactly, which is not
+    // and must not be true for the shadow frame (Slice 9's accepted
+    // exclusions mean shadow geometry intentionally differs from legacy's
+    // during Pet ramp-in / excluded Startle emotions). Gated to kLegacy so
+    // switching pixel_source_ to kShadow cannot trip this assert.
+    if (pixel_source_ == PixelSource::kLegacy) {
+        const FaceV2Pose roundtrip = EyeFrameToPose(legacy_frame);
+        assert(roundtrip.left_x == pose.left_x && roundtrip.right_x == pose.right_x &&
+               roundtrip.y == pose.y && roundtrip.width == pose.width &&
+               roundtrip.height == pose.height && roundtrip.radius == pose.radius);
+    }
 #endif
 
+    // Slice 11A: canonical-frame source switch (09 Slice 11, Option A
+    // comparison point). kShadow's opacity comes from
+    // coordinator_.Compose() itself, not the legacy `opa` shimmer computed
+    // above — the two are on different timing bases (Slice 9 exclusion
+    // #2), and once shadow geometry is primary its own opacity must stay
+    // paired with it rather than mixing timing sources.
+    const EyeFrame frame =
+        pixel_source_ == PixelSource::kShadow ? coordinator_.Compose() : legacy_frame;
+
     // Shared post-compose stage (07 §9, ADR-004): idle gaze (Slice 5) before
-    // blink openness (Slice 4). Both the current legacy-primary path and the
-    // future mailbox/animator-primary path (Slice 11) apply this identically
-    // after the canonical frame and before Render, so visible idle/blink are
-    // path-independent.
+    // blink openness (Slice 4). Both pixel sources share this stage
+    // identically, applied after the canonical frame and before Render, so
+    // visible idle/blink are path-independent.
     const EyeFrame gazed =
         ApplyIdleGaze(frame, idle_controller_.look_offset_x(), idle_controller_.look_offset_y());
     const EyeFrame composed = ApplyBlinkOpenness(gazed, blink_controller_.openness_multiplier());

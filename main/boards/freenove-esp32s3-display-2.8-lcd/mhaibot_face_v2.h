@@ -40,6 +40,18 @@ public:
         kSleeping,
     };
 
+    // Slice 11A: runtime-selectable canonical-frame source, checked once per
+    // tick inside ApplyPose. kLegacy (default) is unchanged behavior —
+    // PoseToEyeFrame(ResolveRenderedPose()) as it has been since Slice 0.
+    // kShadow selects EyeAnimationCoordinator::Compose() instead. Selecting
+    // this does not stop legacy computation: ResolveRenderedPose(),
+    // transient_mode_, and transition_from_ keep updating unconditionally
+    // every tick regardless of pixel_source_ (09 Slice 11 rollback
+    // contract) — flipping back to kLegacy mid-session must never render a
+    // stale frame. Nothing in this codebase calls SetPixelSource(kShadow)
+    // yet; introducing the caller (console/debug entry point) is Slice 11B.
+    enum class PixelSource { kLegacy, kShadow };
+
     MhaiBotFaceV2(lv_obj_t* parent, lv_color_t eye_color);
     MhaiBotFaceV2(lv_obj_t* parent, lv_color_t eye_color, const Config& config);
     ~MhaiBotFaceV2();
@@ -59,6 +71,13 @@ public:
     bool IsVisible() const { return visible_; }
     bool IsGroggyWakeActive() const;
     Emotion GetEmotion() const { return target_emotion_; }
+
+    // Slice 11A: rollback-safe, runtime-checked-once-per-tick pixel source
+    // switch. Legacy remains sole pixel authority by default (kLegacy);
+    // switching to kShadow and back requires no restart, since legacy state
+    // is never skipped regardless of pixel_source_ (see PixelSource above).
+    void SetPixelSource(PixelSource source) { pixel_source_ = source; }
+    PixelSource GetPixelSource() const { return pixel_source_; }
 
     // Slice 3 (dual-path step B start): thread-safe shadow-publish entry
     // point (02 façade). Any task may call this; it only stores the latest
@@ -144,6 +163,11 @@ private:
     // InterpolatePose/PettingPose/StartledPose/GroggyPose remain sole
     // pixel authority until Slice 11.
     EyeAnimationCoordinator coordinator_;
+    // Slice 11A: default kLegacy — legacy remains sole pixel authority
+    // until this is explicitly switched (no production caller does so
+    // yet). See PixelSource/SetPixelSource above for the rollback
+    // invariant this depends on.
+    PixelSource pixel_source_ = PixelSource::kLegacy;
     lv_color_t eye_color_;
     Pose current_pose_{};
     Pose transition_from_{};
