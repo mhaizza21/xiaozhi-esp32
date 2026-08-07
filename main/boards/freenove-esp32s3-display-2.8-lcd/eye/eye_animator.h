@@ -21,6 +21,10 @@ public:
     // these are the animator's future callees, not a deletion.
     static uint16_t ClampProgress(uint32_t elapsed_ms, uint32_t duration_ms);
     static int LerpInt(int from, int to, uint16_t progress_per_mille);
+    // Slice 8: float lerp for EyeGeometry-space composition (transient/
+    // transition geometry lives in the canonical float EyeFrame model,
+    // unlike legacy's int Pose).
+    static float LerpFloat(float from, float to, uint16_t progress_per_mille);
 
 private:
     EyeFrame frame_{};

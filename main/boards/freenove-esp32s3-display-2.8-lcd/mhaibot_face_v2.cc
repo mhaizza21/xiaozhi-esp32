@@ -154,12 +154,20 @@ void MhaiBotFaceV2::StartPetting() {
     transient_mode_ = TransientMode::kPetting;
     transient_elapsed_ms_ = 0;
     HideSleepLabel();
+    // Slice 8: shadow dual-publish, mirroring the PublishIntent pattern
+    // established in Slice 3. Called directly here (not only inferred by
+    // Coordinator::SetIntent's emotion-change edge-detection) because this
+    // fires immediately, ahead of the mailbox's next Tick()-time
+    // consumption — legacy pixel authority and transient_mode_ are
+    // unaffected.
+    coordinator_.StartPetting();
 }
 
 void MhaiBotFaceV2::StartStartled() {
     transient_mode_ = TransientMode::kStartled;
     transient_elapsed_ms_ = 0;
     HideSleepLabel();
+    coordinator_.StartStartled();
 }
 
 void MhaiBotFaceV2::StartGroggyWake() {
@@ -169,6 +177,7 @@ void MhaiBotFaceV2::StartGroggyWake() {
     transient_mode_ = TransientMode::kGroggyWake;
     transient_elapsed_ms_ = 0;
     HideSleepLabel();
+    coordinator_.StartGroggyWake();
 }
 
 void MhaiBotFaceV2::CancelTransientAnimation() {
@@ -178,6 +187,7 @@ void MhaiBotFaceV2::CancelTransientAnimation() {
     transient_mode_ = TransientMode::kNone;
     transient_elapsed_ms_ = 0;
     HideSleepLabel();
+    coordinator_.CancelTransient();
 }
 
 bool MhaiBotFaceV2::IsGroggyWakeActive() const {
@@ -248,10 +258,15 @@ void MhaiBotFaceV2::Tick(uint32_t elapsed_ms) {
     emotion_controller_.SetEmotion(mailbox_intent.emotion);
     emotion_controller_.Update(elapsed_ms);
 
-    // Slice 7: coordinator fed from the same mailbox intent — shadow
-    // computation only. Compose()/IdleAllowed()/BlinkAllowed() are pure
-    // queries, covered by host tests; not called here since nothing
+    // Slice 7/8: coordinator fed from the same mailbox intent and the
+    // same elapsed_ms as the legacy transient/transition timers above —
+    // shadow computation only. Compose()/IdleAllowed()/BlinkAllowed() are
+    // pure queries, covered by host tests; not called here since nothing
     // consumes their result yet (see the class comment on coordinator_).
+    // Pet/Startled/GroggyWake shadow entry/exit is additionally driven
+    // directly from Start*/CancelTransientAnimation below (not solely
+    // inferred from mailbox intent), so it fires immediately rather than
+    // waiting for the next mailbox publish.
     coordinator_.SetIntent(mailbox_intent);
     coordinator_.Update(elapsed_ms);
 

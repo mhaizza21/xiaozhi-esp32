@@ -128,13 +128,20 @@ private:
     // consumed by ApplyPose/Render; legacy ResolveBasePose remains the
     // pixel-authoritative base-pose source until Slice 11.
     EmotionController emotion_controller_;
-    // Slice 7: priority resolution + activity-adjustment composition,
-    // fed each tick from the same mailbox intent as blink/idle/emotion
-    // above. Compose()/IdleAllowed()/BlinkAllowed() are pure queries
-    // exercised only by host tests in this slice — Tick() does not call
-    // them, since MhaiBotFaceV2's own local-state-anchored blink/idle
-    // suppression checks above remain in force (see Tick() comments and
-    // the Slice 7 report for why). Legacy pose resolution remains sole
+    // Slice 7: priority resolution + activity-adjustment composition.
+    // Slice 8: also owns shadow pet/startle/groggy transient composition
+    // and the steady-state emotion transition (inventory T1/T3/T4/T5),
+    // driven both from the same mailbox intent as blink/idle/emotion
+    // above (SetIntent/Update) and directly from Start*/
+    // CancelTransientAnimation below (StartPetting/StartStartled/
+    // StartGroggyWake/CancelTransient), so shadow transient entry/exit
+    // fires immediately rather than waiting for the next mailbox publish.
+    // Compose()/IdleAllowed()/BlinkAllowed() are pure queries exercised
+    // only by host tests — Tick() does not call them for pixels, since
+    // MhaiBotFaceV2's own local-state-anchored blink/idle suppression
+    // checks above remain in force (see Tick() comments and the Slice 7/8
+    // reports for why). Legacy ResolveRenderedPose/ResolveBasePose/
+    // InterpolatePose/PettingPose/StartledPose/GroggyPose remain sole
     // pixel authority until Slice 11.
     EyeAnimationCoordinator coordinator_;
     lv_color_t eye_color_;

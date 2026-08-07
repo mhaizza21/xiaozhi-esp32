@@ -29,9 +29,14 @@ public:
     const EyeFrame& frame() const { return frame_; }
     EyeEmotion emotion() const { return emotion_; }
 
-private:
+    // Slice 8: exposed publicly (pure visibility change, no logic change)
+    // so EyeAnimationCoordinator can query fixed emotion bases (e.g. Happy
+    // for Petting, Sleepy/Neutral for GroggyWake) without owning a second
+    // EmotionController instance — consuming this static table, not
+    // duplicating it (09 Slice 6/7/8 ownership discipline).
     static EyeFrame BasePose(EyeEmotion emotion);
 
+private:
     EyeEmotion emotion_ = EyeEmotion::Neutral;
     EyeFrame frame_{};
 };

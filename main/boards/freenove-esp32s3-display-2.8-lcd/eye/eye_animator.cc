@@ -21,3 +21,7 @@ uint16_t EyeAnimator::ClampProgress(uint32_t elapsed_ms, uint32_t duration_ms) {
 int EyeAnimator::LerpInt(int from, int to, uint16_t progress_per_mille) {
     return from + ((to - from) * static_cast<int>(progress_per_mille)) / 1000;
 }
+
+float EyeAnimator::LerpFloat(float from, float to, uint16_t progress_per_mille) {
+    return from + (to - from) * (static_cast<float>(progress_per_mille) / 1000.0f);
+}

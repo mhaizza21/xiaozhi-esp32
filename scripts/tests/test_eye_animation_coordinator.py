@@ -13,6 +13,8 @@ TEST_SOURCE = ROOT / "scripts" / "tests" / "eye_animation_coordinator_test.cc"
 SOURCES = (
     TEST_SOURCE,
     EYE_DIR / "eye_animation_coordinator.cc",
+    EYE_DIR / "eye_animator.cc",
+    EYE_DIR / "emotion_controller.cc",
 )
 
 
@@ -31,10 +33,10 @@ def find_cxx_compiler():
 
 
 class EyeAnimationCoordinatorHostTest(unittest.TestCase):
-    """LVGL-free host test for the Slice 7 EyeAnimationCoordinator."""
+    """LVGL-free host test for EyeAnimationCoordinator (Slices 7-8)."""
 
     def test_coordinator_compiles(self):
-        """Always runs: compiles the Slice 7 sources with -Wall -Wextra -Werror."""
+        """Always runs: compiles the coordinator + its dependencies with -Wall -Wextra -Werror."""
         compiler = find_cxx_compiler()
         if compiler is None:
             self.skipTest("g++ or clang++ is required for the host coordinator test")
