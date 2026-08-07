@@ -284,10 +284,24 @@ EyeFrame EyeAnimationCoordinator::ApplyActivityDelta(const EyeFrame& base) const
             frame.left.height += 22.0f;
             frame.right.height += 22.0f;
             break;
+        case EyeActivity::Speaking:
+            // Matches legacy MhaiBotFaceV2::ResolveBasePose(kSpeaking)
+            // (eye_y+2, height=54) expressed as a delta from Neutral
+            // (eye_y+0, height=62): center_y-2, height-8, both eyes, no
+            // x/width change. Reachable whenever SetEmotion("speaking") is
+            // called (the LLM "speaking" expression string) — previously
+            // had no shadow equivalent, producing an 8px height mismatch
+            // against legacy on every speaking turn (Slice 11B hardware
+            // finding).
+            frame.left.center_y += -2.0f;
+            frame.right.center_y += -2.0f;
+            frame.left.height += -8.0f;
+            frame.right.height += -8.0f;
+            break;
         default:
-            // No activity delta for Idle/Speaking/Sleeping/Waking/Error/
-            // Booting — only Thinking/Listening have a reviewed legacy
-            // delta (09 Slice 7 scope).
+            // No activity delta for Idle/Sleeping/Waking/Error/Booting —
+            // only Thinking/Listening/Speaking have a reviewed legacy
+            // delta (09 Slice 7 scope; Speaking added post-Slice-11B).
             break;
     }
     return frame;
