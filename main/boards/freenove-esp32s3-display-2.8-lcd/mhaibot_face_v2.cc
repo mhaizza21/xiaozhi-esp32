@@ -217,6 +217,19 @@ void MhaiBotFaceV2::Tick(uint32_t elapsed_ms) {
     blink_controller_.SetAllowed(blink_allowed);
     blink_controller_.Update(elapsed_ms);
 
+    // Slice 5: idle only during a genuine Idle-equivalent emotion with no
+    // active transient — Listening/Thinking/Speaking/Sleepy/Sleeping and
+    // any pet/startle/groggy transient all disable it (05 §5, 07 §7; Slice
+    // 5 risk note "Fighting Listening pose — disable idle under
+    // interaction activities").
+    const bool idle_enabled =
+        transient_mode_ == TransientMode::kNone &&
+        (target_emotion_ == Emotion::kNeutral || target_emotion_ == Emotion::kRobot2 ||
+         target_emotion_ == Emotion::kHappy || target_emotion_ == Emotion::kRelaxed ||
+         target_emotion_ == Emotion::kConfident);
+    idle_controller_.SetEnabled(idle_enabled);
+    idle_controller_.Update(elapsed_ms);
+
     if (transition_elapsed_ms_ < config_.transition_ms) {
         transition_elapsed_ms_ += elapsed_ms;
     }
@@ -286,11 +299,14 @@ void MhaiBotFaceV2::ApplyPose(const Pose& pose, lv_opa_t opa) {
            roundtrip.height == pose.height && roundtrip.radius == pose.radius);
 #endif
 
-    // Slice 4: shared post-compose stage (07 §9, ADR-004). Both the current
-    // legacy-primary path and the future mailbox/animator-primary path
-    // (Slice 11) apply blink here, after the canonical frame and before
-    // Render, so visible blink is path-independent.
-    const EyeFrame composed = ApplyBlinkOpenness(frame, blink_controller_.openness_multiplier());
+    // Shared post-compose stage (07 §9, ADR-004): idle gaze (Slice 5) before
+    // blink openness (Slice 4). Both the current legacy-primary path and the
+    // future mailbox/animator-primary path (Slice 11) apply this identically
+    // after the canonical frame and before Render, so visible idle/blink are
+    // path-independent.
+    const EyeFrame gazed =
+        ApplyIdleGaze(frame, idle_controller_.look_offset_x(), idle_controller_.look_offset_y());
+    const EyeFrame composed = ApplyBlinkOpenness(gazed, blink_controller_.openness_multiplier());
     renderer_.Render(composed);
 }
 

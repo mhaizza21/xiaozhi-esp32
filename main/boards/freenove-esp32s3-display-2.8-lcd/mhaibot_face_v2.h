@@ -3,6 +3,7 @@
 
 #include "eye/blink_controller.h"
 #include "eye/eye_intent_mailbox.h"
+#include "eye/idle_controller.h"
 #include "eye/lvgl_eye_renderer.h"
 
 #include <lvgl.h>
@@ -112,6 +113,12 @@ private:
     // after the canonical Pose->EyeFrame and before Render — legacy pose
     // resolution remains the pixel authority for base/transient geometry.
     BlinkController blink_controller_;
+    // Slice 5: additive idle micro-gaze layer (07 §6). Composed in the same
+    // shared post-compose stage as blink, applied BEFORE the blink
+    // multiplier (07 §9 order) via ApplyIdleGaze. Enabled only for a
+    // genuine Idle-equivalent emotion with no active transient (05 §5 / 07
+    // §7); legacy pose resolution remains geometry authority.
+    IdleController idle_controller_;
     lv_color_t eye_color_;
     Pose current_pose_{};
     Pose transition_from_{};
