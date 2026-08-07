@@ -3,6 +3,7 @@
 
 #include "eye/blink_controller.h"
 #include "eye/emotion_controller.h"
+#include "eye/eye_animation_coordinator.h"
 #include "eye/eye_intent_mailbox.h"
 #include "eye/idle_controller.h"
 #include "eye/lvgl_eye_renderer.h"
@@ -127,6 +128,15 @@ private:
     // consumed by ApplyPose/Render; legacy ResolveBasePose remains the
     // pixel-authoritative base-pose source until Slice 11.
     EmotionController emotion_controller_;
+    // Slice 7: priority resolution + activity-adjustment composition,
+    // fed each tick from the same mailbox intent as blink/idle/emotion
+    // above. Compose()/IdleAllowed()/BlinkAllowed() are pure queries
+    // exercised only by host tests in this slice — Tick() does not call
+    // them, since MhaiBotFaceV2's own local-state-anchored blink/idle
+    // suppression checks above remain in force (see Tick() comments and
+    // the Slice 7 report for why). Legacy pose resolution remains sole
+    // pixel authority until Slice 11.
+    EyeAnimationCoordinator coordinator_;
     lv_color_t eye_color_;
     Pose current_pose_{};
     Pose transition_from_{};

@@ -211,6 +211,15 @@ void MhaiBotFaceV2::Tick(uint32_t elapsed_ms) {
     // state (not the possibly-stale mailbox) so suppression cannot lag a
     // shadow-publish call; Error/Booting (not tracked by the face) fall
     // through to the mailbox's blink_allowed (05 §8 / 07 §5.3, ADR-002).
+    // Slice 7 note: EyeAnimationCoordinator::BlinkAllowed() exists and
+    // trusts mailbox_intent.blink_allowed alone, but is deliberately NOT
+    // used here yet — StartGroggyWake() does not itself republish the
+    // mailbox (only the later SetEmotion("neutral") in UpdateGroggyWake
+    // does, on a separate board timer), so blink_allowed can flip true
+    // slightly before or after this face's own transient_mode_ clears.
+    // Switching to the mailbox-only signal would trade today's narrow,
+    // already-audited overlap window (Slice 4 risk) for a new, less
+    // understood one — exactly the "do not force migration" case.
     const bool blink_allowed = mailbox_intent.blink_allowed &&
                                 target_emotion_ != Emotion::kSleeping &&
                                 transient_mode_ != TransientMode::kGroggyWake;
@@ -221,7 +230,9 @@ void MhaiBotFaceV2::Tick(uint32_t elapsed_ms) {
     // active transient — Listening/Thinking/Speaking/Sleepy/Sleeping and
     // any pet/startle/groggy transient all disable it (05 §5, 07 §7; Slice
     // 5 risk note "Fighting Listening pose — disable idle under
-    // interaction activities").
+    // interaction activities"). Slice 7 note: same rationale as the blink
+    // decision above applies to EyeAnimationCoordinator::IdleAllowed() —
+    // kept local for now rather than switching to the mailbox-only signal.
     const bool idle_enabled =
         transient_mode_ == TransientMode::kNone &&
         (target_emotion_ == Emotion::kNeutral || target_emotion_ == Emotion::kRobot2 ||
@@ -236,6 +247,13 @@ void MhaiBotFaceV2::Tick(uint32_t elapsed_ms) {
     // pixel-authoritative base-pose source until Slice 11.
     emotion_controller_.SetEmotion(mailbox_intent.emotion);
     emotion_controller_.Update(elapsed_ms);
+
+    // Slice 7: coordinator fed from the same mailbox intent — shadow
+    // computation only. Compose()/IdleAllowed()/BlinkAllowed() are pure
+    // queries, covered by host tests; not called here since nothing
+    // consumes their result yet (see the class comment on coordinator_).
+    coordinator_.SetIntent(mailbox_intent);
+    coordinator_.Update(elapsed_ms);
 
     if (transition_elapsed_ms_ < config_.transition_ms) {
         transition_elapsed_ms_ += elapsed_ms;
