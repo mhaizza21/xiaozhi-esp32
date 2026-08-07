@@ -230,6 +230,13 @@ void MhaiBotFaceV2::Tick(uint32_t elapsed_ms) {
     idle_controller_.SetEnabled(idle_enabled);
     idle_controller_.Update(elapsed_ms);
 
+    // Slice 6: EmotionController fed from the already-bridged mailbox
+    // EyeEmotion (Slice 3) — shadow computation only. Its frame() is not
+    // consumed by ApplyPose; legacy ResolveBasePose remains the
+    // pixel-authoritative base-pose source until Slice 11.
+    emotion_controller_.SetEmotion(mailbox_intent.emotion);
+    emotion_controller_.Update(elapsed_ms);
+
     if (transition_elapsed_ms_ < config_.transition_ms) {
         transition_elapsed_ms_ += elapsed_ms;
     }

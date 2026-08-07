@@ -2,6 +2,7 @@
 #define MHAIBOT_FACE_V2_H
 
 #include "eye/blink_controller.h"
+#include "eye/emotion_controller.h"
 #include "eye/eye_intent_mailbox.h"
 #include "eye/idle_controller.h"
 #include "eye/lvgl_eye_renderer.h"
@@ -119,6 +120,13 @@ private:
     // genuine Idle-equivalent emotion with no active transient (05 §5 / 07
     // §7); legacy pose resolution remains geometry authority.
     IdleController idle_controller_;
+    // Slice 6: emotion base-pose lookup, fed each tick from the mailbox's
+    // already-bridged EyeEmotion (Slice 3's shadow-publish, computed from
+    // the same SetEmotion string as target_emotion_ in the same call —
+    // see MhaiBotDisplay::SetEmotion). Its frame() is computed but not yet
+    // consumed by ApplyPose/Render; legacy ResolveBasePose remains the
+    // pixel-authoritative base-pose source until Slice 11.
+    EmotionController emotion_controller_;
     lv_color_t eye_color_;
     Pose current_pose_{};
     Pose transition_from_{};
