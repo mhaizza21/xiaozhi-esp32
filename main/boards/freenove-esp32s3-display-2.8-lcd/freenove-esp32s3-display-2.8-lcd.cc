@@ -8,6 +8,7 @@
 #include "button.h"
 #include "codecs/es8311_audio_codec.h"
 #include "config.h"
+#include "eye_pixel_source_console.h"
 #include "mcp_server.h"
 #include "mhaibot_display.h"
 #include "mhaibot_interaction_model.h"
@@ -379,7 +380,11 @@ private:
                                       DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
     }
 
-    void InitializeTools() {}
+    // Slice 11B: registers the engineer-only `eye_pixel_source` UART
+    // console command (bring-up/soak tool, not user-facing). display_ is
+    // already constructed by InitializeLcdDisplay() at this point in the
+    // constructor's call order.
+    void InitializeTools() { RegisterEyePixelSourceConsole(display_); }
 
 public:
     FreenoveESP32S3Display() : boot_button_(BOOT_BUTTON_GPIO) {

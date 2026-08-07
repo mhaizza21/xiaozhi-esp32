@@ -38,6 +38,13 @@ public:
     void CancelTransientAnimation();
     bool IsGroggyWakeActive() const;
 
+    // Slice 11B: engineer-only passthrough to MhaiBotFaceV2::SetPixelSource/
+    // GetPixelSource (Slice 11A), called only from the UART console command
+    // registered in eye_pixel_source_console.cc. Not reachable via MCP,
+    // voice, or any user-facing UI (09 Slice 11B).
+    void SetEyePixelSource(MhaiBotFaceV2::PixelSource source);
+    MhaiBotFaceV2::PixelSource GetEyePixelSource() const;
+
 private:
     static bool IsLegacyEmotion(const char* emotion);
     static MhaiBotFaceV2::Emotion ToFaceEmotion(const char* emotion);

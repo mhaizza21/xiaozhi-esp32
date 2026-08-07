@@ -534,3 +534,13 @@ void MhaiBotDisplay::CancelTransientAnimation() {
 bool MhaiBotDisplay::IsGroggyWakeActive() const {
     return face_ != nullptr && face_->IsGroggyWakeActive();
 }
+
+void MhaiBotDisplay::SetEyePixelSource(MhaiBotFaceV2::PixelSource source) {
+    if (face_ != nullptr) {
+        face_->SetPixelSource(source);
+    }
+}
+
+MhaiBotFaceV2::PixelSource MhaiBotDisplay::GetEyePixelSource() const {
+    return face_ != nullptr ? face_->GetPixelSource() : MhaiBotFaceV2::PixelSource::kLegacy;
+}
