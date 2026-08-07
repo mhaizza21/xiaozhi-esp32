@@ -124,6 +124,17 @@ EyeAnimationCoordinator::EyeAnimationCoordinator() {
 
 void EyeAnimationCoordinator::SetIntent(const EyeIntent& intent) {
     const bool emotion_changed = (intent.emotion != intent_.emotion);
+    // Hardware finding (post-Slice-11B): activity-only changes (e.g.
+    // entering Listening while the emotion string stays "neutral", a
+    // normal app sequence) previously left transition_to_ stale, since
+    // ApplyActivityDelta was only re-evaluated on an emotion change.
+    // Legacy has no equivalent staleness — ResolveRenderedPose()
+    // recomputes ResolveBasePose(target_emotion_) fresh every tick — so
+    // shadow could render geometry from whatever activity/emotion
+    // combination was last cached instead of the current one. Rebuilding
+    // the transition target on activity change too keeps shadow's
+    // steady-state target as fresh as legacy's.
+    const bool activity_changed = (intent.activity != intent_.activity);
     EyeFrame from{};
     if (emotion_changed) {
         // Captures whatever was active under the OLD intent_ (steady
@@ -137,9 +148,19 @@ void EyeAnimationCoordinator::SetIntent(const EyeIntent& intent) {
             transient_elapsed_ms_ = 0;
             SetTransient(EyeTransient::None);
         }
+    } else if (activity_changed) {
+        // Same "from" capture as the emotion-changed case, but no
+        // transient cancellation — activity-only changes do not cancel an
+        // active Pet/Startle/Groggy transient (unchanged scope; that
+        // semantics question is separate from this geometry-staleness
+        // fix). Compose() ignores transition_to_ entirely while a
+        // transient is active (see Compose()'s switch), so rebuilding the
+        // target here is safe even mid-transient — it simply takes effect
+        // once the transient exits.
+        from = Compose();
     }
     intent_ = intent;
-    if (emotion_changed) {
+    if (emotion_changed || activity_changed) {
         BeginTransition(from, ApplyActivityDelta(EmotionController::BasePose(intent_.emotion)));
     }
 }

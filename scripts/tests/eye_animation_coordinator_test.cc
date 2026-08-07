@@ -53,10 +53,6 @@ int main() {
         const EyeFrame composed = coordinator.Compose();
         assert(GeometryEqual(composed.left, focused.left));
         assert(GeometryEqual(composed.right, focused.right));
-
-        coordinator.SetIntent(MakeIntent(EyeActivity::Speaking));  // same emotion, no re-transition
-        const EyeFrame speaking_composed = coordinator.Compose();
-        assert(GeometryEqual(speaking_composed.left, focused.left));  // no delta for Speaking either
     }
 
     // 2. Thinking: exact reviewed deltas (unchanged from Slice 7).
@@ -479,6 +475,111 @@ int main() {
         coordinator.StartGroggyWake();
         assert(coordinator.transient() == EyeTransient::None);
         assert(coordinator.transient_kind() == EyeAnimationCoordinator::TransientKind::kGroggyWake);
+    }
+
+    // ================================================================
+    // 15. Activity-only change rebuilds the transition target (post-
+    // Slice-11B hardware finding). Before this fix, SetIntent's
+    // re-transition gate checked emotion_changed only, so an
+    // activity-only change (emotion staying the same -- e.g. DeviceState
+    // entering Listening while the emotion string is still "neutral", a
+    // normal real sequence) silently left transition_to_ stale: Compose()
+    // kept returning geometry from whatever activity was active the last
+    // time emotion actually changed, never the current activity. Legacy
+    // has no equivalent staleness (ResolveBasePose(target_emotion_) is
+    // recomputed fresh every tick), so shadow's steady-state geometry
+    // could drift arbitrarily out of sync with legacy depending on the
+    // interaction history -- switching back to legacy always looked
+    // instantly correct because legacy is incapable of caching stale
+    // geometry.
+    // ================================================================
+    {
+        // Neutral -> Listening, emotion held constant at Neutral
+        // throughout (the exact real-world sequence that exposed the
+        // bug).
+        EyeAnimationCoordinator coordinator;
+        coordinator.SetIntent(MakeIntent(EyeActivity::Idle, EyeEmotion::Neutral));
+        coordinator.Update(300);
+        EyeFrame composed = coordinator.Compose();
+        assert(GeometryEqual(composed.left, neutral.left));
+
+        coordinator.SetIntent(MakeIntent(EyeActivity::Listening, EyeEmotion::Neutral));
+        // t=0 of the freshly-rebuilt transition: still exactly the "from"
+        // frame (Neutral) -- LerpFrame(from, to, 0) == from regardless of
+        // what "to" now is, matching legacy's own transition-start
+        // continuity. This is not yet proof of the fix; Update(300) below
+        // is.
+        composed = coordinator.Compose();
+        assert(GeometryEqual(composed.left, neutral.left));
+
+        coordinator.Update(300);
+        composed = coordinator.Compose();
+        assert(NearlyEqual(composed.left.center_x, neutral.left.center_x - 4.0f, 0.001f));
+        assert(NearlyEqual(composed.right.center_x, neutral.right.center_x + 14.0f, 0.001f));
+        assert(NearlyEqual(composed.left.center_y, neutral.left.center_y + 5.0f, 0.001f));
+        assert(NearlyEqual(composed.left.width, neutral.left.width + 10.0f, 0.001f));
+        assert(NearlyEqual(composed.left.height, neutral.left.height + 22.0f, 0.001f));
+    }
+    {
+        // Neutral -> Speaking, emotion held constant at Neutral.
+        EyeAnimationCoordinator coordinator;
+        coordinator.SetIntent(MakeIntent(EyeActivity::Idle, EyeEmotion::Neutral));
+        coordinator.Update(300);
+        coordinator.SetIntent(MakeIntent(EyeActivity::Speaking, EyeEmotion::Neutral));
+        coordinator.Update(300);
+        const EyeFrame composed = coordinator.Compose();
+        assert(NearlyEqual(composed.left.center_x, neutral.left.center_x, 0.001f));
+        assert(NearlyEqual(composed.left.center_y, neutral.left.center_y - 2.0f, 0.001f));
+        assert(NearlyEqual(composed.left.width, neutral.left.width, 0.001f));
+        assert(NearlyEqual(composed.left.height, neutral.left.height - 8.0f, 0.001f));
+    }
+    {
+        // Neutral -> Thinking, emotion held constant at Neutral.
+        EyeAnimationCoordinator coordinator;
+        coordinator.SetIntent(MakeIntent(EyeActivity::Idle, EyeEmotion::Neutral));
+        coordinator.Update(300);
+        coordinator.SetIntent(MakeIntent(EyeActivity::Thinking, EyeEmotion::Neutral));
+        coordinator.Update(300);
+        const EyeFrame composed = coordinator.Compose();
+        assert(NearlyEqual(composed.left.center_x, neutral.left.center_x - 12.0f, 0.001f));
+        assert(NearlyEqual(composed.right.center_x, neutral.right.center_x - 4.0f, 0.001f));
+        assert(NearlyEqual(composed.left.center_y, neutral.left.center_y, 0.001f));
+        assert(NearlyEqual(composed.left.height, neutral.left.height - 2.0f, 0.001f));
+    }
+    {
+        // Negative check: an unchanged intent (identical activity AND
+        // emotion) must NOT re-trigger BeginTransition. Re-triggering
+        // would reset transition_elapsed_ms_ to 0 and momentarily revert
+        // Compose() back to the pre-transition "from" frame every tick,
+        // permanently preventing convergence -- this guards against
+        // over-correcting the staleness fix into an every-tick reset.
+        EyeAnimationCoordinator coordinator;
+        coordinator.SetIntent(MakeIntent(EyeActivity::Listening, EyeEmotion::Neutral));
+        coordinator.Update(300);
+        const EyeFrame converged = coordinator.Compose();
+
+        coordinator.SetIntent(MakeIntent(EyeActivity::Listening, EyeEmotion::Neutral));
+        const EyeFrame still_converged = coordinator.Compose();
+        assert(GeometryEqual(still_converged.left, converged.left));
+        assert(GeometryEqual(still_converged.right, converged.right));
+    }
+    {
+        // Emotion-change behavior must be unchanged: an emotion change
+        // still captures "from"/cancels transients exactly as before,
+        // regardless of whether activity also changed in the same call.
+        EyeAnimationCoordinator coordinator;
+        coordinator.SetIntent(MakeIntent(EyeActivity::Idle, EyeEmotion::Focused));
+        coordinator.Update(300);
+        coordinator.StartPetting();
+        assert(coordinator.transient_kind() == EyeAnimationCoordinator::TransientKind::kPetting);
+
+        // Emotion change (Focused -> Happy) together with an activity
+        // change (Idle -> Speaking) in the same SetIntent call: still
+        // cancels the active transient, exactly as a same-activity
+        // emotion change already did pre-fix.
+        coordinator.SetIntent(MakeIntent(EyeActivity::Speaking, EyeEmotion::Happy));
+        assert(coordinator.transient_kind() == EyeAnimationCoordinator::TransientKind::kNone);
+        assert(coordinator.transient() == EyeTransient::None);
     }
 
     return 0;
