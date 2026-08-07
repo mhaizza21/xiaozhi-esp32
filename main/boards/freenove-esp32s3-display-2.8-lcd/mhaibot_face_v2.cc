@@ -1,5 +1,6 @@
 #include "mhaibot_face_v2.h"
 
+#include "eye/eye_post_compose.h"
 #include "eye/eye_pose_adapter.h"
 #include "mhaibot_interaction_model.h"
 
@@ -200,13 +201,21 @@ void MhaiBotFaceV2::BeginTransitionTo(Emotion emotion) {
 void MhaiBotFaceV2::Tick(uint32_t elapsed_ms) {
     ++frame_;
 
-    // Slice 2: consume the mailbox each tick so it is exercised from a real
-    // LVGL-safe context, but nothing publishes yet and legacy pose
-    // resolution remains pixel authority until Slice 11.
+    // Slice 2/3: consume the mailbox each tick. Legacy pose resolution
+    // remains pixel authority until Slice 11; blink_allowed only drives the
+    // additive Slice 4 blink layer below, not geometry.
     EyeIntent mailbox_intent{};
-    if (eye_intent_mailbox_.ConsumeLatest(&mailbox_intent)) {
-        (void)mailbox_intent;
-    }
+    eye_intent_mailbox_.ConsumeLatest(&mailbox_intent);
+
+    // Slice 4: Sleeping/Waking are suppressed from face's own authoritative
+    // state (not the possibly-stale mailbox) so suppression cannot lag a
+    // shadow-publish call; Error/Booting (not tracked by the face) fall
+    // through to the mailbox's blink_allowed (05 §8 / 07 §5.3, ADR-002).
+    const bool blink_allowed = mailbox_intent.blink_allowed &&
+                                target_emotion_ != Emotion::kSleeping &&
+                                transient_mode_ != TransientMode::kGroggyWake;
+    blink_controller_.SetAllowed(blink_allowed);
+    blink_controller_.Update(elapsed_ms);
 
     if (transition_elapsed_ms_ < config_.transition_ms) {
         transition_elapsed_ms_ += elapsed_ms;
@@ -268,13 +277,21 @@ void MhaiBotFaceV2::ApplyPose(const Pose& pose, lv_opa_t opa) {
     const EyeFrame frame = PoseToEyeFrame(adapter_pose, opacity);
 
 #ifndef NDEBUG
+    // Round-trip check runs on the canonical (pre-blink) frame — this is
+    // also the Slice 9 Option A comparison stage, so blink must not be
+    // folded in before it.
     const FaceV2Pose roundtrip = EyeFrameToPose(frame);
     assert(roundtrip.left_x == pose.left_x && roundtrip.right_x == pose.right_x &&
            roundtrip.y == pose.y && roundtrip.width == pose.width &&
            roundtrip.height == pose.height && roundtrip.radius == pose.radius);
 #endif
 
-    renderer_.Render(frame);
+    // Slice 4: shared post-compose stage (07 §9, ADR-004). Both the current
+    // legacy-primary path and the future mailbox/animator-primary path
+    // (Slice 11) apply blink here, after the canonical frame and before
+    // Render, so visible blink is path-independent.
+    const EyeFrame composed = ApplyBlinkOpenness(frame, blink_controller_.openness_multiplier());
+    renderer_.Render(composed);
 }
 
 void MhaiBotFaceV2::ApplySleepLabel(uint32_t elapsed_ms) {

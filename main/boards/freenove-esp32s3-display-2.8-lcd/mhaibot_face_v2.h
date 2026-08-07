@@ -1,6 +1,7 @@
 #ifndef MHAIBOT_FACE_V2_H
 #define MHAIBOT_FACE_V2_H
 
+#include "eye/blink_controller.h"
 #include "eye/eye_intent_mailbox.h"
 #include "eye/lvgl_eye_renderer.h"
 
@@ -106,6 +107,11 @@ private:
     // pixel authority until Slice 11 (09 §"Dual-path mailbox / cutover
     // sequence").
     EyeIntentMailbox eye_intent_mailbox_;
+    // Slice 4: additive blink layer (05 §8 / 07 §5). Its openness multiplier
+    // is applied in the shared post-compose stage (ApplyBlinkOpenness),
+    // after the canonical Pose->EyeFrame and before Render — legacy pose
+    // resolution remains the pixel authority for base/transient geometry.
+    BlinkController blink_controller_;
     lv_color_t eye_color_;
     Pose current_pose_{};
     Pose transition_from_{};
