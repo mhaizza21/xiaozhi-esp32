@@ -430,6 +430,16 @@ void MhaiBotDisplay::ShowNotification(const char* notification, int duration_ms)
     if (face_ != nullptr) {
         face_visible_ = true;
         face_->SetEmotion(MhaiBotFaceV2::Emotion::kHappy);
+        // Slice 10 hotfix: mirrors SetEmotion(const char*)'s dual-feed
+        // pattern. This call site previously drove legacy pixels only,
+        // leaving the mailbox/shadow path holding whatever emotion was
+        // last string-published — a "missed publish path" (09 Slice 11
+        // risk list) that the Slice 10 readiness review flagged as a
+        // blocker to close before cutover. "notification" maps to
+        // EyeEmotion::Happy via EyeActivityAdapter::MapEmotion, matching
+        // the Emotion::kHappy set on the line above.
+        face_->PublishIntent(eye_activity_adapter_.FromDeviceState(
+            Application::GetInstance().GetDeviceState(), "notification", face_->IsGroggyWakeActive()));
     }
     ApplyEyesOnlyChrome();
     ApplyFaceVisibility();
