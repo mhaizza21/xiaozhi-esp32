@@ -44,12 +44,15 @@ class MhaiBotFaceModelTest(unittest.TestCase):
 
         self.assertIn('#include "mhaibot_interaction_model.h"', source)
         self.assertIn("#include <atomic>", source)
+        self.assertIn("constexpr gpio_num_t kMhaiBotEmotionButtonGpio = GPIO_NUM_2;", source)
+        self.assertIn("constexpr uint32_t kMhaiBotEmotionButtonDebounceMs = 50;", source)
         self.assertIn("MhaiBotDisplay* display_;", source)
         self.assertIn("MhaiBotPetGestureDetector pet_gesture_;", source)
         self.assertIn("std::atomic<bool> suppress_touch_release_{false};", source)
         self.assertIn("std::atomic<bool> sleeping_face_active_{false};", source)
         self.assertIn("std::atomic<uint32_t> next_groggy_brightness_update_ms_{0};", source)
         self.assertIn("std::atomic<uint32_t> sleep_generation_{0};", source)
+        self.assertIn("uint8_t emotion_button_index_ = 0;", source)
         self.assertIn("class MhaiBotBacklight : public PwmBacklight", source)
         self.assertIn("void SetBrightnessImmediate(uint8_t brightness)", source)
         self.assertEqual(source.count("TouchTask"), 2)
@@ -68,6 +71,9 @@ class MhaiBotFaceModelTest(unittest.TestCase):
 
         self.assertIn("!self->screen_off_.load() && !self->sleeping_face_active_.load()", touch_task_body)
         self.assertIn("!self->groggy_wake_active_.load()", touch_task_body)
+        self.assertIn("gpio_get_level(kMhaiBotEmotionButtonGpio) == 0", touch_task_body)
+        self.assertIn("kMhaiBotEmotionButtonDebounceMs", touch_task_body)
+        self.assertIn("app.Schedule([self]() { self->CycleEmotionButton(); });", touch_task_body)
         self.assertIn("pet_gesture_.Update(t, x, y, now)", touch_task_body)
         self.assertIn("app.Schedule([self]() { self->display_->StartPetting(); });", touch_task_body)
         self.assertIn("suppress_touch_release_.store(true);", touch_task_body)
@@ -121,6 +127,13 @@ class MhaiBotFaceModelTest(unittest.TestCase):
         self.assertIn("Application::GetInstance().Schedule([this]()", power_level_body)
         self.assertIn("WakeFromNonTouchInput();", power_level_body)
         self.assertIn("WifiBoard::SetPowerSaveLevel(level);", power_level_body)
+        self.assertIn("void InitializeEmotionButton()", source)
+        self.assertIn("GPIO_MODE_INPUT", source)
+        self.assertIn("GPIO_PULLUP_ENABLE", source)
+        self.assertIn("InitializeEmotionButton();", source)
+        self.assertIn("void CycleEmotionButton()", source)
+        for emotion in ('"happy"', '"thinking"', '"confident"', '"sleepy"', '"neutral"'):
+            self.assertIn(emotion, method_body(source, "void CycleEmotionButton()"))
 
         forbidden = ("MQTT", "WEBSOCKET", "sdkconfig", "Protocol")
         for token in forbidden:

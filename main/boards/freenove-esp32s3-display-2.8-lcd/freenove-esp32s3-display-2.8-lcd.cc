@@ -14,6 +14,7 @@
 #include "mhaibot_interaction_model.h"
 #include "wifi_board.h"
 
+#include <driver/gpio.h>
 #include <driver/i2c_master.h>
 #include <driver/spi_common.h>
 #include <esp_log.h>
@@ -29,6 +30,11 @@
 #include <atomic>
 
 #define TAG "FreenoveESP32S3Display"
+
+namespace {
+constexpr gpio_num_t kMhaiBotEmotionButtonGpio = GPIO_NUM_2;
+constexpr uint32_t kMhaiBotEmotionButtonDebounceMs = 50;
+}  // namespace
 
 class MhaiBotBacklight : public PwmBacklight {
 public:
@@ -106,6 +112,7 @@ private:
     std::atomic<uint8_t> groggy_target_brightness_{75};
     std::atomic<uint8_t> pre_sleep_brightness_{100};
     std::atomic<bool> sleeping_face_active_{false};
+    uint8_t emotion_button_index_ = 0;
 
     void InitializeBatteryMonitor() {
         adc_battery_monitor_ =
@@ -119,6 +126,9 @@ private:
         uint32_t last_tap = 0;
         uint32_t down_start = 0;
         bool down = false;
+        bool emotion_button_last_raw = false;
+        bool emotion_button_stable = false;
+        uint32_t emotion_button_last_change = 0;
 
         while (true) {
             bool t;
@@ -126,6 +136,22 @@ private:
             self->touch_.Read(t, x, y);
 
             uint32_t now = esp_timer_get_time() / 1000;
+
+            const bool emotion_button_raw =
+                gpio_get_level(kMhaiBotEmotionButtonGpio) == 0;
+            if (emotion_button_raw != emotion_button_last_raw) {
+                emotion_button_last_raw = emotion_button_raw;
+                emotion_button_last_change = now;
+            }
+            if (now - emotion_button_last_change >= kMhaiBotEmotionButtonDebounceMs &&
+                emotion_button_raw != emotion_button_stable) {
+                emotion_button_stable = emotion_button_raw;
+                if (emotion_button_stable && !self->screen_off_.load() &&
+                    !self->sleeping_face_active_.load() &&
+                    !self->groggy_wake_active_.load()) {
+                    app.Schedule([self]() { self->CycleEmotionButton(); });
+                }
+            }
 
             if (self->groggy_wake_active_.load() &&
                 now >= self->next_groggy_brightness_update_ms_.load()) {
@@ -190,6 +216,34 @@ private:
 
             vTaskDelay(pdMS_TO_TICKS(50));
         }
+    }
+
+    void CycleEmotionButton() {
+        static constexpr const char* kEmotionCycle[] = {
+            "happy",
+            "thinking",
+            "confident",
+            "sleepy",
+            "neutral",
+        };
+        const char* emotion = kEmotionCycle[emotion_button_index_];
+        emotion_button_index_ =
+            static_cast<uint8_t>((emotion_button_index_ + 1) %
+                                 (sizeof(kEmotionCycle) / sizeof(kEmotionCycle[0])));
+        ESP_LOGI(TAG, "Emotion button IO%d -> %s", static_cast<int>(kMhaiBotEmotionButtonGpio),
+                 emotion);
+        display_->CancelTransientAnimation();
+        display_->SetEmotion(emotion);
+    }
+
+    void InitializeEmotionButton() {
+        gpio_config_t io_conf = {};
+        io_conf.pin_bit_mask = 1ULL << kMhaiBotEmotionButtonGpio;
+        io_conf.mode = GPIO_MODE_INPUT;
+        io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+        io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+        io_conf.intr_type = GPIO_INTR_DISABLE;
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
     }
 
     void ApplyScreenOff() {
@@ -393,6 +447,7 @@ public:
         InitializeSpi();
         InitializeLcdDisplay();
         InitializePowerSaveTimer();
+        InitializeEmotionButton();
         InitializeTouch();
         InitializeButtons();
         InitializeTools();
