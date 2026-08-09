@@ -364,6 +364,9 @@ private:
     void InitializePowerSaveTimer() {
         // Keep CPU/audio behavior unchanged. The board-local display first
         // shows sleeping eyes, then powers the panel off after 30 more minutes.
+        // Mic/WakeNet must stay live through sleep so voice wake ("Hi ESP")
+        // keeps working -- see main/application.cc's wake-word cooldown for
+        // how the self-trigger-after-TTS loop is handled instead.
         power_save_timer_ =
             new PowerSaveTimer(-1, MhaiBotIdleSleepTimeoutSeconds(), MhaiBotScreenOffIdleSeconds());
         power_save_timer_->OnEnterSleepMode([this]() {

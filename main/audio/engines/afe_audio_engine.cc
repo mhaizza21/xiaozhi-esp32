@@ -164,6 +164,13 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms, srmode
 
     if (wake_detector_ == WakeDetector::kWakeNet) {
         afe_iface_->disable_wakenet(afe_data_);
+        // Lowered from the model default (~0.63) to the minimum allowed
+        // (0.4-0.9999). Hardware-validated: "Hi ESP" reliably wakes the
+        // device from real sleep at this threshold, at normal speaking
+        // volume and distance. Future tuning may revisit this if false
+        // wakes from ambient noise become an issue.
+        int threshold_result = afe_iface_->set_wakenet_threshold(afe_data_, 1, 0.4f);
+        ESP_LOGI(TAG, "set_wakenet_threshold(0.4) result: %d", threshold_result);
     }
     if (codec_->input_reference()) {
         afe_iface_->disable_aec(afe_data_);

@@ -149,6 +149,15 @@ private:
     int clock_ticks_ = 0;
     TaskHandle_t activation_task_handle_ = nullptr;
 
+    // Wake-word self-trigger guard: boards without echo cancellation (e.g.
+    // no input_reference wiring) can have their own TTS output picked back
+    // up by the mic and misread as a fresh wake word right after an audio
+    // channel closes. Rather than disabling the mic during idle/sleep (which
+    // would also block legitimate voice wake), a short cooldown after the
+    // channel closes suppresses wake-word triggers just for that window.
+    uint32_t audio_channel_closed_at_ms_ = 0;
+    static constexpr uint32_t kWakeWordCooldownAfterCloseMs = 1500;
+
 
     // Event handlers
     void HandleStateChangedEvent();

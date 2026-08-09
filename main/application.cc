@@ -14,6 +14,7 @@
 
 #include <driver/gpio.h>
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <arpa/inet.h>
 #include <cJSON.h>
 #include <cstring>
@@ -540,6 +541,7 @@ void Application::InitializeProtocol() {
 
     protocol_->OnAudioChannelClosed([this, &board]() {
         board.SetPowerSaveLevel(PowerSaveLevel::LOW_POWER);
+        audio_channel_closed_at_ms_ = esp_timer_get_time() / 1000;
         Schedule([this]() {
             auto display = Board::GetInstance().GetDisplay();
             display->SetChatMessage("system", "");
@@ -817,6 +819,18 @@ void Application::HandleStopListeningEvent() {
 
 void Application::HandleWakeWordDetectedEvent() {
     if (!protocol_) {
+        return;
+    }
+
+    // Guard against self-triggering on the device's own TTS output right
+    // after an audio channel closes (boards without echo cancellation can
+    // otherwise loop: reply -> mic hears itself -> wake word -> reply -> ...).
+    uint32_t now_ms = esp_timer_get_time() / 1000;
+    if (now_ms - audio_channel_closed_at_ms_ < kWakeWordCooldownAfterCloseMs) {
+        ESP_LOGI(TAG, "Wake word ignored: within cooldown after audio channel close");
+        // The detector stops itself on firing; re-arm it since we're not
+        // routing this trigger anywhere.
+        audio_service_.EnableWakeWordDetection(true);
         return;
     }
 
