@@ -216,6 +216,20 @@ Evidence:
 - No panic / watchdog / brownout / reboot during the button test
 - User visually confirmed eye changes on the physical display for each press
 
+### Slice 11B — Deterministic Rollback Validation (engineer-only console hook)
+
+Emotion transition mid-lerp rollback: PASS
+Evidence: Shadow -> Legacy rollback fired exactly 150 ms into the 300 ms emotion transition. Legacy geometry remained mid-transition and the board remained responsive without panic/reset/watchdog/brownout.
+
+Groggy transient deterministic rollback: PASS
+Evidence: engineer-only console hook started Groggy under Shadow and rolled back to Legacy exactly 2500 ms later. Legacy geometry remained in the Groggy pose and the board remained responsive. Two continuous-serial reruns showed no firmware reset.
+
+Normal sleep/screen-off Groggy rollback: NOT EXECUTED
+Reason: the deterministic hook called StartGroggyWake() directly and did not exercise the real idle-timeout, screen-off, touch-wake path.
+
+Serial reset note:
+The apparent reset during the first run occurred only after reopening the serial port. Continuous-connection reruns did not reset, identifying DTR/RTS auto-reset as test-tool artifact rather than firmware failure.
+
 ## Links
 
 - Architecture docs: `docs/architecture/eye-animation/` in the `xiaozhi-esp32` repo
