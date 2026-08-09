@@ -112,6 +112,110 @@ Slice 6: EmotionController
 
 (Not implemented as part of this checkpoint.)
 
+## Sign-off decisions
+
+### Slice 10 Decision — Pet Ramp-In Behavior
+
+Status:
+APPROVED for Slice 11 cutover.
+
+Accepted difference:
+The first 300ms Pet entry animation is not pixel-identical between legacy and shadow paths.
+
+Reason:
+Legacy implementation uses recursive interpolation:
+
+`current_pose_ -> PettingPose()`
+
+with `current_pose_` updated every tick.
+
+Shadow implementation uses deterministic anchor interpolation:
+
+captured `pet_anchor_ -> PettingPose()`
+
+Impact:
+- Difference is limited to the ramp-in phase (<300ms).
+- Peak measured divergence is approximately 16px.
+- Endpoint and hold phase match.
+- No divergence after transition completes.
+- Pet sway/bob/opacity phase differences remain covered by Slice 9 exclusion rules.
+
+Decision:
+Accept this as an intentional behavior difference.
+
+Do NOT:
+- redesign Coordinator interpolation
+- reintroduce recursive state
+- modify Slice 8 transient composition
+- modify parity harness tolerances
+
+Recorded at HEAD: `6fbff30` (Slice 10 hotfix — ShowNotification dual-feed).
+
+### Slice 11 Decision 1 — Startle during Thinking/Listening/Speaking
+
+Status:
+ACCEPTED
+
+Reason:
+Legacy stores Thinking/Listening/Speaking geometry inside `ResolveBasePose()`. The shadow
+architecture intentionally separates:
+- `EmotionController` = emotion geometry
+- `EyeActivity` = activity adjustment
+
+Reintroducing legacy-only activity-baked geometry into Startle would violate the current
+ownership model.
+
+Impact:
+Startle parity remains guaranteed only for representable emotion states: Neutral, Robot2,
+Happy, Confident/Focused, Relaxed/Sleepy.
+
+No code change required.
+
+### Slice 11 Decision 2 — Same-emotion restart during active transition/transient
+
+Status:
+ACCEPTED
+
+Reason:
+Legacy receives direct emotion events and restarts transitions unconditionally. The mailbox
+`EyeIntent` model is latest-state based and does not preserve repeated-event identity. Adding
+event semantics is outside Slice 11 scope.
+
+Impact:
+Repeated same-emotion calls during active transition/transient may differ between legacy and
+shadow.
+
+No code change required.
+
+Recorded at HEAD: `6fbff30`. Both decisions accepted for Slice 11 cutover — all previously open
+Slice 10 readiness-review sign-off gaps are now closed. Slice 11 implementation not yet
+authorized.
+
+## Hardware validation results
+
+### GPIO2 Emotion Cycle Button — Validation
+
+Status:
+PASS
+
+Commit:
+`eff8062` (feat(mhaibot): add GPIO2 emotion cycle button)
+
+Feature:
+Physical GPIO2 button (`INPUT_PULLUP`, 50ms debounce) cycles emotion on each press:
+`happy -> thinking -> confident -> sleepy -> neutral`, then wraps. Gated by the same
+`!screen_off_ && !sleeping_face_active_ && !groggy_wake_active_` condition as Pet/Startle
+touch detection; each press cancels any active transient before calling `SetEmotion`.
+
+Evidence:
+- ESP-IDF build: PASS
+- Hardware flash (Freenove ESP32-S3, no NVS erase — Wi-Fi credentials preserved): PASS
+- Live monitor: `Emotion button IO2 -> ...` logged 33 times across repeated presses
+- Sequence correct on every cycle: `happy -> thinking -> confident -> sleepy -> neutral`,
+  wrapping back to `happy` — no skipped, duplicated, or misordered steps
+- No panic / watchdog / brownout / reboot during the button test
+- User visually confirmed eye changes on the physical display for each press
+
 ## Links
 
 - Architecture docs: `docs/architecture/eye-animation/` in the `xiaozhi-esp32` repo
