@@ -224,8 +224,20 @@ Evidence: Shadow -> Legacy rollback fired exactly 150 ms into the 300 ms emotion
 Groggy transient deterministic rollback: PASS
 Evidence: engineer-only console hook started Groggy under Shadow and rolled back to Legacy exactly 2500 ms later. Legacy geometry remained in the Groggy pose and the board remained responsive. Two continuous-serial reruns showed no firmware reset.
 
-Normal sleep/screen-off Groggy rollback: NOT EXECUTED
-Reason: the deterministic hook called StartGroggyWake() directly and did not exercise the real idle-timeout, screen-off, touch-wake path.
+Normal sleep/screen-off Groggy rollback: PASS
+Evidence: a single continuous serial session exercised the real hardware path: the idle timeout
+entered the MhaiBot sleep face at approximately 615 seconds, the backlight reached brightness 0
+at approximately 2415 seconds, and one physical touchscreen tap caused
+`PowerSaveTimer: Exiting power save mode` at approximately 2575 seconds. The monitor then
+switched Shadow -> Legacy 3283.5 ms after wake, while the 5000 ms Groggy transient was still
+active, and a follow-up query confirmed `eye_pixel_source: legacy`. No panic, watchdog,
+brownout, or firmware reset occurred during the armed test. The user visually confirmed that
+the Groggy eye animation remained continuous with no blank display, freeze, or frame jump.
+
+Timing note: the planned rollback delay was 2500 ms, but serial-monitor read granularity made
+the observed normal-path rollback 3283.5 ms. This still proves mid-transient rollback because
+it occurred before the 5000 ms Groggy transient completed; it must not be reported as an exact
+2500 ms rollback.
 
 Serial reset note:
 The apparent reset during the first run occurred only after reopening the serial port. Continuous-connection reruns did not reset, identifying DTR/RTS auto-reset as test-tool artifact rather than firmware failure.
