@@ -494,6 +494,20 @@ public:
         level = adc_battery_monitor_->GetBatteryLevel();
         return true;
     }
+
+    // Lowered from the model default (~0.63) to the minimum allowed
+    // (0.4-0.9999). Hardware-validated: "Hi ESP" reliably wakes the device
+    // from real sleep at this threshold, at normal speaking volume and
+    // distance, on this board's mic/codec path. Future tuning may revisit
+    // this if false wakes from ambient noise become an issue.
+    virtual std::optional<float> GetWakeNetThreshold() override { return 0.4f; }
+
+    // Hardware-validated: this board has no echo cancellation (no
+    // input_reference wiring), so its own TTS output can be picked back up
+    // by the mic and misread as a fresh wake word right after an audio
+    // channel closes. 1500ms suppresses that self-trigger loop while still
+    // allowing a genuine "Hi ESP" shortly after a conversation ends.
+    virtual uint32_t GetWakeWordCooldownAfterAudioCloseMs() override { return 1500; }
 };
 
 DECLARE_BOARD(FreenoveESP32S3Display);

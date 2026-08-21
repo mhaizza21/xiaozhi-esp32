@@ -10,6 +10,8 @@
 #include <esp_vadn_models.h>
 
 #include "audio_service.h"
+#include "board.h"
+#include "wake_word_threshold.h"
 #include "wake_words/custom_wake_word.h"
 
 #define TAG "AfeAudioEngine"
@@ -164,13 +166,14 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms, srmode
 
     if (wake_detector_ == WakeDetector::kWakeNet) {
         afe_iface_->disable_wakenet(afe_data_);
-        // Lowered from the model default (~0.63) to the minimum allowed
-        // (0.4-0.9999). Hardware-validated: "Hi ESP" reliably wakes the
-        // device from real sleep at this threshold, at normal speaking
-        // volume and distance. Future tuning may revisit this if false
-        // wakes from ambient noise become an issue.
-        int threshold_result = afe_iface_->set_wakenet_threshold(afe_data_, 1, 0.4f);
-        ESP_LOGI(TAG, "set_wakenet_threshold(0.4) result: %d", threshold_result);
+        // Boards opt in to a non-default threshold via
+        // Board::GetWakeNetThreshold() (see board.h); most boards leave it
+        // at std::nullopt and keep WakeNet's own model default.
+        auto threshold = ResolveWakeNetThreshold(Board::GetInstance().GetWakeNetThreshold());
+        if (threshold.has_value()) {
+            int threshold_result = afe_iface_->set_wakenet_threshold(afe_data_, 1, *threshold);
+            ESP_LOGI(TAG, "set_wakenet_threshold(%.4f) result: %d", *threshold, threshold_result);
+        }
     }
     if (codec_->input_reference()) {
         afe_iface_->disable_aec(afe_data_);

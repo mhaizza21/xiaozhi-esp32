@@ -5,8 +5,10 @@
 #include <web_socket.h>
 #include <mqtt.h>
 #include <udp.h>
+#include <cstdint>
 #include <string>
 #include <functional>
+#include <optional>
 #include <network_interface.h>
 
 #include "led/led.h"
@@ -82,6 +84,19 @@ public:
     virtual void SetPowerSaveLevel(PowerSaveLevel level) = 0;
     virtual std::string GetBoardJson() = 0;
     virtual std::string GetDeviceStatusJson() = 0;
+
+    // WakeNet detection threshold override, in the model's accepted range
+    // [0.4, 0.9999]. std::nullopt (the default for every board) means "use
+    // WakeNet's own model default" -- boards only override this when they've
+    // hardware-validated a different value for their mic/codec path.
+    virtual std::optional<float> GetWakeNetThreshold() { return std::nullopt; }
+
+    // Post-audio-close wake-word cooldown, in milliseconds. 0 (the default
+    // for every board) disables the cooldown entirely. Boards without echo
+    // cancellation, whose own TTS output can be picked back up by the mic
+    // and misread as a fresh wake word right after an audio channel closes,
+    // override this with a hardware-validated value for their mic/codec path.
+    virtual uint32_t GetWakeWordCooldownAfterAudioCloseMs() { return 0; }
 };
 
 #define DECLARE_BOARD(BOARD_CLASS_NAME) \

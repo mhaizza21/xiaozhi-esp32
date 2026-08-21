@@ -825,8 +825,13 @@ void Application::HandleWakeWordDetectedEvent() {
     // Guard against self-triggering on the device's own TTS output right
     // after an audio channel closes (boards without echo cancellation can
     // otherwise loop: reply -> mic hears itself -> wake word -> reply -> ...).
+    // A board-capability cooldown of 0 (the default) disables this check;
+    // EvaluateWakeWordCooldown() always returns kProceed in that case, since
+    // an unsigned elapsed time can never be less than a 0ms window.
     uint32_t now_ms = esp_timer_get_time() / 1000;
-    if (now_ms - audio_channel_closed_at_ms_ < kWakeWordCooldownAfterCloseMs) {
+    uint32_t cooldown_ms = Board::GetInstance().GetWakeWordCooldownAfterAudioCloseMs();
+    if (EvaluateWakeWordCooldown(now_ms, audio_channel_closed_at_ms_, cooldown_ms) ==
+        WakeWordCooldownDecision::kSuppressAndRearm) {
         ESP_LOGI(TAG, "Wake word ignored: within cooldown after audio channel close");
         // The detector stops itself on firing; re-arm it since we're not
         // routing this trigger anywhere.

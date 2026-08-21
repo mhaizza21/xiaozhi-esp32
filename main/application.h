@@ -11,12 +11,14 @@
 #include <deque>
 #include <memory>
 #include <functional>
+#include <atomic>
 
 #include "protocol.h"
 #include "ota.h"
 #include "audio_service.h"
 #include "device_state.h"
 #include "device_state_machine.h"
+#include "wake_word_cooldown.h"
 
 // Main event bits
 #define MAIN_EVENT_SCHEDULE             (1 << 0)
@@ -155,8 +157,15 @@ private:
     // channel closes. Rather than disabling the mic during idle/sleep (which
     // would also block legitimate voice wake), a short cooldown after the
     // channel closes suppresses wake-word triggers just for that window.
-    uint32_t audio_channel_closed_at_ms_ = 0;
-    static constexpr uint32_t kWakeWordCooldownAfterCloseMs = 1500;
+    // The cooldown duration is a per-board capability (see
+    // Board::GetWakeWordCooldownAfterAudioCloseMs()); 0 disables it.
+    //
+    // Written from the protocol's OnAudioChannelClosed callback (its own
+    // task) and read from HandleWakeWordDetectedEvent (main-loop task) --
+    // atomic, not scheduled onto the main loop, so the write can't be
+    // reordered after a same-tick wake-word check (MAIN_EVENT_WAKE_WORD_DETECTED
+    // is dispatched before MAIN_EVENT_SCHEDULE in the main loop).
+    std::atomic<uint32_t> audio_channel_closed_at_ms_{0};
 
 
     // Event handlers
