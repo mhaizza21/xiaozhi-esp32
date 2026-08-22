@@ -249,6 +249,22 @@ void MhaiBotDisplay::UpdateAlertLabel() {
     lv_obj_move_foreground(alert_label_);
 }
 
+void MhaiBotDisplay::PublishBehaviorIntentLocked(const char* emotion) {
+    if (face_ == nullptr) {
+        return;
+    }
+
+    MhaiBotBehaviorInput input{};
+    input.state = Application::GetInstance().GetDeviceState();
+    input.emotion = emotion;
+    input.groggy_wake_active = face_->IsGroggyWakeActive();
+    input.servo_available = false;
+
+    const MhaiBotBehaviorIntent intent = behavior_model_.FromInput(input);
+    face_->PublishIntent(intent.eye);
+    servo_uart_.ApplyIntent(intent);
+}
+
 void MhaiBotDisplay::SetupUI() {
     SpiLcdDisplay::SetupUI();
 
@@ -360,10 +376,7 @@ void MhaiBotDisplay::SetEmotion(const char* emotion) {
     SetAlertState(is_error, battery_low_);
     pending_error_status_ = false;
     face_->SetEmotion(force_listening_pose ? MhaiBotFaceV2::Emotion::kListening : ToFaceEmotion(emotion));
-    // Slice 3: shadow-publish in parallel with the legacy SetEmotion call
-    // above. Mailbox-only; does not affect pixels (dual-path step B start).
-    face_->PublishIntent(eye_activity_adapter_.FromDeviceState(
-        Application::GetInstance().GetDeviceState(), emotion, face_->IsGroggyWakeActive()));
+    PublishBehaviorIntentLocked(emotion);
     // Stop any GIF before showing the face so LVGL does not keep animating
     // a hidden emoji image.
     if (gif_controller_) {
@@ -438,8 +451,7 @@ void MhaiBotDisplay::ShowNotification(const char* notification, int duration_ms)
         // blocker to close before cutover. "notification" maps to
         // EyeEmotion::Happy via EyeActivityAdapter::MapEmotion, matching
         // the Emotion::kHappy set on the line above.
-        face_->PublishIntent(eye_activity_adapter_.FromDeviceState(
-            Application::GetInstance().GetDeviceState(), "notification", face_->IsGroggyWakeActive()));
+        PublishBehaviorIntentLocked("notification");
     }
     ApplyEyesOnlyChrome();
     ApplyFaceVisibility();

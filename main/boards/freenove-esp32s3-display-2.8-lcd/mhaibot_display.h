@@ -2,8 +2,9 @@
 #define MHAIBOT_DISPLAY_H
 
 #include "display/lcd_display.h"
-#include "eye/eye_activity_adapter.h"
+#include "mhaibot_behavior_model.h"
 #include "mhaibot_face_v2.h"
+#include "mhaibot_servo_uart.h"
 
 #include <memory>
 #include <string>
@@ -54,6 +55,7 @@ private:
     void ApplyEyesOnlyChrome();
     void SetAlertState(bool error_active, bool battery_low);
     void UpdateAlertLabel();
+    void PublishBehaviorIntentLocked(const char* emotion);
     static bool IsErrorStatus(const char* status);
     static bool IsErrorEmotion(const char* emotion);
     static bool IsWarningEmotion(const char* emotion);
@@ -67,10 +69,10 @@ private:
     static void ReactionEmojiTimerCallback(void* arg);
 
     std::unique_ptr<MhaiBotFaceV2> face_;
-    // Slice 3 (dual-path step B start): shadow-publishes an EyeIntent in
-    // parallel with face_->SetEmotion(...). Pure/stateless; does not affect
-    // pixels (09 / ADR-002).
-    EyeActivityAdapter eye_activity_adapter_;
+    // Log-only behavior director for face/neck intent. Servo transport remains
+    // disabled until hardware validation explicitly enables it in a later slice.
+    MhaiBotBehaviorModel behavior_model_;
+    MhaiBotServoUart servo_uart_;
     lv_obj_t* alert_label_ = nullptr;
     lv_obj_t* reaction_emoji_ = nullptr;
     esp_timer_handle_t reaction_emoji_timer_ = nullptr;
