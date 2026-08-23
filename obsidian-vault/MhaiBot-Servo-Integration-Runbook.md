@@ -3,9 +3,12 @@
 ## Current Status
 
 - ESP32-S3 firmware has a behavior intent model for face and future neck motion.
-- ESP32-S3 firmware logs behavior intent only.
-- ESP32-S3 does not send UART bytes to the ESP32-C3 servo controller yet.
-- Servo hardware validation is not executed in this slice.
+- ESP32-S3 behavior intent still sends a center-only UART validation command:
+  `move 1500 1500`.
+- No idle/random automatic neck movement is enabled in this slice.
+- Manual MCP tool `self.neck.move` can send bounded human-like validation gestures:
+  `left`, `right`, `up`, `down`, `center`, `shake`, and `nod`.
+- Manual commands move smoothly, hold briefly, then return center smoothly.
 
 ## Hardware Roles
 
@@ -65,32 +68,52 @@ TX must cross to RX. RX must cross to TX.
 10. Test X gently:
 
 ```text
-x 1450
+x 1350
 x 1500
-x 1550
+x 1650
 x 1500
 ```
 
 11. Test Y gently:
 
 ```text
-y 1470
+y 1400
 y 1500
-y 1530
+y 1600
 y 1500
 ```
 
 12. Test combined motion:
 
 ```text
-move 1450 1500
+move 1350 1500
 move 1500 1500
-move 1550 1500
-move 1500 1470
+move 1650 1500
+move 1500 1400
 move 1500 1500
-move 1500 1530
+move 1500 1600
 move 1500 1500
 ```
+
+13. Keep the ESP32-C3 monitor open.
+14. Flash and monitor the ESP32-S3 firmware.
+15. Confirm the ESP32-C3 monitor receives `[uart] move 1500 1500`.
+16. Ask the S3 voice assistant for a small neck movement, then confirm C3
+    receives the matching safe command:
+
+```text
+left   -> move 1350 1500
+right  -> move 1650 1500
+up     -> move 1500 1400
+down   -> move 1500 1600
+center -> move 1500 1500
+shake  -> smooth left/right/left/center sequence
+nod    -> smooth up/down/up/center sequence
+```
+
+The C3 monitor should show several `[uart] move ...` lines for one voice
+command because the S3 motion layer sends small steps instead of jumping to the
+target pulse width in one command.
 
 ## Stop Conditions
 
@@ -106,13 +129,24 @@ Stop immediately if any of these happen:
 
 ## S3 Firmware Validation For This Slice
 
-Expected log pattern after flashing the current S3 firmware:
+Expected S3 log pattern after flashing the current S3 firmware:
 
 ```text
-I (...) MhaiBotServoUart: Servo UART bridge disabled; behavior intents are log-only
-I (...) MhaiBotServoUart: Log-only intent: motion=ListeningHold neck_milli=(0, 0) servo_output_allowed=false
-I (...) MhaiBotServoUart: Log-only intent: motion=SpeakingNod neck_milli=(0, 80) servo_output_allowed=false
-I (...) MhaiBotServoUart: Log-only intent: motion=SleepPose neck_milli=(0, 0) servo_output_allowed=false
+I (...) MhaiBotServoUart: Servo UART bridge is in human-like manual motion validation mode
+I (...) MhaiBotServoUart: Servo UART center-only mode enabled: TX=GPIO43 RX=GPIO44 baud=115200
+I (...) MhaiBotServoUart: Center-only UART command sent for motion=<mode>: move 1500 1500
+I (...) MCP: Add tool: self.neck.move
+I (...) MhaiBotServoUart: Servo UART command sent for <action>: move <x> <y>
+I (...) MhaiBotServoUart: Skipping behavior center command while manual neck motion is active
+```
+
+Expected C3 monitor pattern:
+
+```text
+[uart] move 1500 1500
+Servo X (GPIO3) pulse: 1500 us
+Servo Y (GPIO10) pulse: 1500 us
+OK
 ```
 
 PASS criteria:
@@ -122,14 +156,50 @@ PASS criteria:
 - Display face still works.
 - Wake word still works.
 - Conversation close does not self-trigger.
-- Logs show behavior intent transitions.
-- No servo movement is caused by S3 firmware in this slice.
+- ESP32-C3 monitor shows `[uart] move 1500 1500`.
+- ESP32-C3 monitor shows the requested manual neck command for
+  `left/right/up/down/center/shake/nod`.
+- Manual commands move smoothly, hold briefly, then return center smoothly.
+- Servos only move within the bounded validation range.
+- No idle/random automatic neck movement is enabled in this slice.
+
+## Hardware Evidence
+
+### 2026-08-23 Human-Like Manual Neck Motion
+
+Status: PASS
+
+Software validation evidence:
+
+- `python -m unittest scripts.tests.test_mhaibot_servo_integration_contracts scripts.tests.test_mhaibot_behavior_model`
+  passed: 5 tests run, 1 skipped.
+- `git diff --check` passed with only Windows LF/CRLF warnings.
+- ESP32-S3 `idf.py build` passed.
+- ESP32-S3 `idf.py -p COM4 flash` passed with `Hash of data verified`.
+
+Hardware observation evidence:
+
+- User confirmed the human-like servo motion test passed after flashing the S3
+  firmware.
+- Smooth `left`, `right`, `up`, and `down` manual neck commands passed.
+- Smooth `shake` and `nod` manual neck gestures passed.
+- C3 monitor showed multi-step `[uart] move ...` command sequences from the S3
+  motion layer.
+- No stop condition was reported during this test: no frame hit, hard jitter,
+  C3 reset, S3 reset, display power sag, or rapid servo heating was reported.
+
+Scope of this PASS:
+
+- Bench hardware validation only.
+- The robot body has not been fully assembled around the pan/tilt mechanism yet.
+- Re-test is required after mounting the servos into the physical body.
 
 ## Next Slice
 
 Only after the above passes on hardware:
 
-1. Add an explicit S3 UART transport enable flag.
-2. Start by sending only `center`.
-3. Add rate limiting before sending any `move` command.
-4. Re-run wake/sleep validation after enabling real UART output.
+1. Mount the servos into the robot body loosely, starting from `center`.
+2. Re-test `left/right/up/down/shake/nod` after mounting.
+3. Tune or invert X/Y direction names if physical motion does not match labels.
+4. Add rate limiting and collision guards for repeated voice commands.
+5. Re-run wake/sleep validation after enabling broader motion.

@@ -258,7 +258,7 @@ void MhaiBotDisplay::PublishBehaviorIntentLocked(const char* emotion) {
     input.state = Application::GetInstance().GetDeviceState();
     input.emotion = emotion;
     input.groggy_wake_active = face_->IsGroggyWakeActive();
-    input.servo_available = false;
+    input.servo_available = servo_uart_.IsEnabled();
 
     const MhaiBotBehaviorIntent intent = behavior_model_.FromInput(input);
     face_->PublishIntent(intent.eye);
@@ -545,6 +545,10 @@ void MhaiBotDisplay::CancelTransientAnimation() {
 
 bool MhaiBotDisplay::IsGroggyWakeActive() const {
     return face_ != nullptr && face_->IsGroggyWakeActive();
+}
+
+bool MhaiBotDisplay::MoveNeck(const std::string& action) {
+    return servo_uart_.SendActionCommand(action);
 }
 
 void MhaiBotDisplay::SetEyePixelSource(MhaiBotFaceV2::PixelSource source) {

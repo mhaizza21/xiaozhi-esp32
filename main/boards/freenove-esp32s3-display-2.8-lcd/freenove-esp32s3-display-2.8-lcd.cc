@@ -28,6 +28,7 @@
 #include "system_reset.h"
 
 #include <atomic>
+#include <string>
 
 #define TAG "FreenoveESP32S3Display"
 
@@ -441,7 +442,24 @@ private:
     // console command (bring-up/soak tool, not user-facing). display_ is
     // already constructed by InitializeLcdDisplay() at this point in the
     // constructor's call order.
-    void InitializeTools() { RegisterEyePixelSourceConsole(display_); }
+    void InitializeTools() {
+        RegisterEyePixelSourceConsole(display_);
+
+        McpServer::GetInstance().AddTool(
+            "self.neck.move",
+            "Move MhaiBot's neck with safe bounded servo gestures. Use this when the user asks the robot to look left, look right, look up, look down, center, shake its head, or nod. Allowed action values: left, right, up, down, center, shake, nod.",
+            PropertyList({
+                Property("action", kPropertyTypeString),
+            }),
+            [this](const PropertyList& properties) -> ReturnValue {
+                const std::string action = properties["action"].value<std::string>();
+                if (!display_->MoveNeck(action)) {
+                    return std::string(
+                        "Unsupported neck action. Use left, right, up, down, center, shake, or nod.");
+                }
+                return std::string("Neck action sent: " + action);
+            });
+    }
 
 public:
     FreenoveESP32S3Display() : boot_button_(BOOT_BUTTON_GPIO) {

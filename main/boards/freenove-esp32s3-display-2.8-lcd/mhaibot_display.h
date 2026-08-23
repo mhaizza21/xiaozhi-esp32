@@ -38,6 +38,7 @@ public:
     void StartStartled();
     void CancelTransientAnimation();
     bool IsGroggyWakeActive() const;
+    bool MoveNeck(const std::string& action);
 
     // Slice 11B: engineer-only passthrough to MhaiBotFaceV2::SetPixelSource/
     // GetPixelSource (Slice 11A), called only from the UART console command
