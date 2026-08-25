@@ -35,6 +35,9 @@
 namespace {
 constexpr gpio_num_t kMhaiBotEmotionButtonGpio = GPIO_NUM_2;
 constexpr uint32_t kMhaiBotEmotionButtonDebounceMs = 50;
+constexpr gpio_num_t kMhaiBotPirGpio = GPIO_NUM_14;
+constexpr uint32_t kMhaiBotPirPollMs = 100;
+constexpr uint32_t kMhaiBotPirStatusLogMs = 1000;
 }  // namespace
 
 class MhaiBotBacklight : public PwmBacklight {
@@ -219,6 +222,36 @@ private:
         }
     }
 
+    static void PirSensorTask(void* arg) {
+        (void)arg;
+        int last_level = gpio_get_level(kMhaiBotPirGpio);
+        bool last_motion = last_level == 1;
+        uint32_t next_status_log_ms = esp_timer_get_time() / 1000 + kMhaiBotPirStatusLogMs;
+
+        ESP_LOGI(TAG, "PIR log-only monitor started on IO%d: level=%d %s",
+                 static_cast<int>(kMhaiBotPirGpio), last_level,
+                 last_motion ? "motion detected" : "clear");
+
+        while (true) {
+            const int level = gpio_get_level(kMhaiBotPirGpio);
+            const bool motion = level == 1;
+            const uint32_t now_ms = esp_timer_get_time() / 1000;
+            if (level != last_level) {
+                last_level = level;
+                last_motion = motion;
+                ESP_LOGI(TAG, "PIR IO%d changed: level=%d %s",
+                         static_cast<int>(kMhaiBotPirGpio), level,
+                         motion ? "motion detected" : "clear");
+            } else if (now_ms >= next_status_log_ms) {
+                next_status_log_ms = now_ms + kMhaiBotPirStatusLogMs;
+                ESP_LOGI(TAG, "PIR IO%d status: level=%d %s",
+                         static_cast<int>(kMhaiBotPirGpio), level,
+                         motion ? "motion detected" : "clear");
+            }
+            vTaskDelay(pdMS_TO_TICKS(kMhaiBotPirPollMs));
+        }
+    }
+
     void CycleEmotionButton() {
         static constexpr const char* kEmotionCycle[] = {
             "happy",
@@ -245,6 +278,17 @@ private:
         io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
         io_conf.intr_type = GPIO_INTR_DISABLE;
         ESP_ERROR_CHECK(gpio_config(&io_conf));
+    }
+
+    void InitializePirSensor() {
+        gpio_config_t io_conf = {};
+        io_conf.pin_bit_mask = 1ULL << kMhaiBotPirGpio;
+        io_conf.mode = GPIO_MODE_INPUT;
+        io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+        io_conf.pull_down_en = GPIO_PULLDOWN_ENABLE;
+        io_conf.intr_type = GPIO_INTR_DISABLE;
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
+        xTaskCreatePinnedToCore(PirSensorTask, "mhaibot_pir", 3072, this, 4, nullptr, 0);
     }
 
     void ApplyScreenOff() {
@@ -471,6 +515,7 @@ public:
         InitializeEmotionButton();
         InitializeTouch();
         InitializeButtons();
+        InitializePirSensor();
         InitializeTools();
         GetBacklight()->SetBrightness(100);
     }

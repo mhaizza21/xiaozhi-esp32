@@ -165,6 +165,51 @@ PASS criteria:
 
 ## Hardware Evidence
 
+### 2026-08-24 S3 Command Routing Retest Without Servos Connected
+
+Status: PARTIAL / LOG-ONLY
+
+Context:
+
+- User clarified the servos were not connected during this retest.
+- Therefore, this run must not be counted as physical servo validation.
+- Log file:
+  `logs/s3-wake-retetest-20260824-030641.log`
+
+Observed S3 command-routing evidence:
+
+```text
+Application: >> พยักษหน้า
+Application: << % self.neck.move...
+MhaiBotServoUart: Servo UART command sent for nod-up: move 1500 1450
+MhaiBotServoUart: Servo UART command sent for nod-down: move 1500 1600
+MhaiBotServoUart: Servo UART command sent for nod-center: move 1500 1500
+
+Application: >> หันไปทางซ้าย
+Application: << % self.neck.move...
+MhaiBotServoUart: Servo UART command sent for look-left: move 1350 1500
+MhaiBotServoUart: Servo UART command sent for soft-return-center: move 1500 1500
+```
+
+Interpretation:
+
+- S3 MCP/manual neck command routing is still present.
+- S3 generated bounded UART `move ...` commands for `nod` and `look-left`.
+- Physical servo movement is NOT TESTED because the servos were disconnected.
+
+Required follow-up when hardware is connected:
+
+1. Connect C3 and servos using the wiring table above.
+2. Open the C3 monitor on COM5.
+3. Re-run `Hi ESP`, then ask for:
+   - `พยักหน้า`
+   - `หันไปทางซ้าย`
+   - `หันไปทางขวา`
+   - `ส่ายหน้า`
+4. Confirm both:
+   - S3 monitor emits bounded `MhaiBotServoUart` commands.
+   - C3 monitor receives `[uart] move ...` and the physical servos move safely.
+
 ### 2026-08-23 Human-Like Manual Neck Motion
 
 Status: PASS
