@@ -33,6 +33,25 @@ struct MhaibotTouchStatus {
     bool initialized = false;
     bool lvgl_registered = false;
     std::string last_event = "not_observed";
+    uint32_t event_count = 0;
+    int64_t last_event_us = 0;
+};
+
+struct MhaibotMotionContext {
+    bool valid = false;
+    float accel_magnitude_g = 0.0f;
+    float gyro_magnitude_dps = 0.0f;
+    float roll_deg = 0.0f;
+    float pitch_deg = 0.0f;
+    bool stable = false;
+    bool tilted = false;
+    bool moving = false;
+    bool shake_like_motion = false;
+    bool impact_like_motion = false;
+    bool low_gravity = false;
+    std::string posture = "unknown";
+    std::string primary_event = "unavailable";
+    std::string suggested_face = "neutral";
 };
 
 class MhaibotSensorHub {
@@ -51,6 +70,7 @@ public:
     cJSON* GetMotionJson();
     cJSON* GetRtcJson();
     cJSON* GetTouchJson();
+    cJSON* GetInteractionContextJson();
 
 private:
     class I2cRegisterDevice {
@@ -76,6 +96,8 @@ private:
     MhaibotTouchStatus touch_;
     esp_err_t motion_status_ = ESP_ERR_NOT_FOUND;
     esp_err_t rtc_status_ = ESP_ERR_NOT_FOUND;
+
+    MhaibotMotionContext InterpretMotion(const MhaibotMotionSample& sample) const;
 };
 
 #endif  // MHAIBOT_SENSOR_HUB_H

@@ -179,6 +179,11 @@ private:
             PropertyList(), [this](const PropertyList&) -> ReturnValue {
                 return sensor_hub_->GetTouchJson();
             });
+        mcp_server.AddTool("self.sensors.get_interaction_context",
+            "Return read-only interpreted Mhaibot sensor context: posture, motion event, touch freshness, RTC time bucket, and suggested face label. This does not change robot behavior.",
+            PropertyList(), [this](const PropertyList&) -> ReturnValue {
+                return sensor_hub_->GetInteractionContextJson();
+            });
     }
 
 public:

@@ -17,6 +17,8 @@ Board support for the Waveshare ESP32-S3-Touch-LCD-1.69 Mhaibot sensor bring-up 
 
 The current implementation registers the LCD and touch panel, then exposes read-only diagnostic MCP tools for onboard sensors.
 
+The second software layer also exposes an interpreted interaction context. It converts raw IMU/touch/RTC reads into advisory labels that future Mhaibot behavior code can consume without knowing chip registers.
+
 ## Build
 
 ```sh
@@ -31,9 +33,10 @@ python scripts/build.py waveshare/esp32-s3-touch-lcd-1.69 --name esp32-s3-touch-
 | `self.sensors.get_motion` | One QMI8658 accelerometer/gyroscope sample |
 | `self.sensors.get_rtc_time` | PCF85063 time registers and clock integrity flag |
 | `self.sensors.get_touch_last_event` | CST816T bring-up state and last board-observed event |
+| `self.sensors.get_interaction_context` | Read-only posture, motion event, touch freshness, time bucket, and suggested face label |
 
 ## Validation Boundary
 
-Build success only proves the firmware compiles for the board profile. Touch, IMU, RTC, power behavior, battery ADC, buzzer, PIR, and camera require hardware validation on the physical board before they should be treated as passed.
+Build success only proves the firmware compiles for the board profile. Touch, IMU, RTC, interpreted interaction context, power behavior, battery ADC, buzzer, PIR, and camera require hardware validation on the physical board before they should be treated as passed.
 
 PIR and camera are architecture placeholders only in this slice. Do not assign GPIOs for them until the actual module, wiring, and conflicts with the extension header are checked.

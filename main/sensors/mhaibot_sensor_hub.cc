@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include <esp_log.h>
+#include <esp_timer.h>
 
 #define TAG "MhaibotSensorHub"
 
@@ -23,6 +24,8 @@ constexpr float kQmi8658TempSensitivity = 256.0f;
 constexpr uint8_t kPcf85063Address = 0x51;
 constexpr uint8_t kPcf85063Seconds = 0x04;
 constexpr uint8_t kPcf85063ClockIntegrityMask = 0x80;
+constexpr float kRadToDeg = 57.2957795f;
+constexpr int64_t kTouchFreshWindowUs = 5 * 1000 * 1000;
 
 int16_t Le16(const uint8_t* data) {
     return static_cast<int16_t>((static_cast<uint16_t>(data[1]) << 8) | data[0]);
@@ -38,6 +41,26 @@ void AddEspError(cJSON* json, const char* key, esp_err_t status) {
 
 void AddFloat(cJSON* json, const char* key, float value) {
     cJSON_AddNumberToObject(json, key, std::isfinite(value) ? value : 0.0f);
+}
+
+float Magnitude3(float x, float y, float z) {
+    return std::sqrt((x * x) + (y * y) + (z * z));
+}
+
+const char* TimeBucket(int hour) {
+    if (hour < 0 || hour > 23) {
+        return "unknown";
+    }
+    if (hour < 6) {
+        return "night";
+    }
+    if (hour < 12) {
+        return "morning";
+    }
+    if (hour < 18) {
+        return "afternoon";
+    }
+    return "evening";
 }
 }  // namespace
 
@@ -106,11 +129,14 @@ void MhaibotSensorHub::SetTouchInitialized(bool lvgl_registered) {
     touch_.initialized = true;
     touch_.lvgl_registered = lvgl_registered;
     touch_.last_event = lvgl_registered ? "lvgl_registered" : "driver_initialized";
+    touch_.last_event_us = esp_timer_get_time();
 }
 
 void MhaibotSensorHub::RecordTouchEvent(const char* event_name) {
     touch_.initialized = true;
     touch_.last_event = event_name ? event_name : "unknown";
+    touch_.event_count++;
+    touch_.last_event_us = esp_timer_get_time();
 }
 
 bool MhaibotSensorHub::ReadMotion(MhaibotMotionSample& sample) {
@@ -150,6 +176,52 @@ bool MhaibotSensorHub::ReadMotion(MhaibotMotionSample& sample) {
     sample.gyro_dps[1] = static_cast<float>(Le16(&motion_data[8])) / kQmi8658GyroSensitivity512dps;
     sample.gyro_dps[2] = static_cast<float>(Le16(&motion_data[10])) / kQmi8658GyroSensitivity512dps;
     return true;
+}
+
+MhaibotMotionContext MhaibotSensorHub::InterpretMotion(const MhaibotMotionSample& sample) const {
+    MhaibotMotionContext context;
+    if (!sample.valid) {
+        return context;
+    }
+
+    context.valid = true;
+    context.accel_magnitude_g = Magnitude3(sample.accel_g[0], sample.accel_g[1], sample.accel_g[2]);
+    context.gyro_magnitude_dps = Magnitude3(sample.gyro_dps[0], sample.gyro_dps[1], sample.gyro_dps[2]);
+    context.roll_deg = std::atan2(sample.accel_g[1], sample.accel_g[2]) * kRadToDeg;
+    context.pitch_deg =
+        std::atan2(-sample.accel_g[0], Magnitude3(sample.accel_g[1], sample.accel_g[2], 0.0f)) * kRadToDeg;
+
+    context.low_gravity = context.accel_magnitude_g < 0.35f;
+    context.impact_like_motion = context.accel_magnitude_g > 1.8f;
+    context.shake_like_motion = context.gyro_magnitude_dps > 180.0f || context.impact_like_motion;
+    context.moving = context.gyro_magnitude_dps > 25.0f || std::fabs(context.accel_magnitude_g - 1.0f) > 0.18f;
+    context.tilted = std::fabs(context.roll_deg) > 50.0f || std::fabs(context.pitch_deg) > 50.0f;
+    context.stable = !context.moving && context.accel_magnitude_g > 0.75f && context.accel_magnitude_g < 1.25f;
+
+    if (context.low_gravity) {
+        context.posture = "lifted_or_freefall";
+        context.primary_event = "low_gravity";
+        context.suggested_face = "startled";
+    } else if (sample.accel_g[2] < -0.75f) {
+        context.posture = "face_down";
+        context.primary_event = "face_down";
+        context.suggested_face = "concerned";
+    } else if (std::fabs(sample.accel_g[0]) > 0.75f || std::fabs(sample.accel_g[1]) > 0.75f) {
+        context.posture = "side_or_strong_tilt";
+        context.primary_event = context.shake_like_motion ? "shake_like_motion" : "tilted";
+        context.suggested_face = context.shake_like_motion ? "startled" : "attentive";
+    } else {
+        context.posture = "upright";
+        context.primary_event = context.shake_like_motion ? "shake_like_motion" : (context.moving ? "moving" : "stable");
+        context.suggested_face = context.shake_like_motion ? "startled" : (context.moving ? "attentive" : "neutral");
+    }
+
+    if (context.impact_like_motion) {
+        context.primary_event = "impact_like_motion";
+        context.suggested_face = "startled";
+    }
+
+    return context;
 }
 
 bool MhaibotSensorHub::ReadRtcTime(MhaibotRtcTime& time) {
@@ -241,9 +313,74 @@ cJSON* MhaibotSensorHub::GetRtcJson() {
 
 cJSON* MhaibotSensorHub::GetTouchJson() {
     cJSON* json = cJSON_CreateObject();
+    int64_t now_us = esp_timer_get_time();
+    int64_t age_ms = touch_.last_event_us > 0 ? (now_us - touch_.last_event_us) / 1000 : -1;
     cJSON_AddBoolToObject(json, "initialized", touch_.initialized);
     cJSON_AddBoolToObject(json, "lvgl_registered", touch_.lvgl_registered);
     cJSON_AddStringToObject(json, "last_event", touch_.last_event.c_str());
+    cJSON_AddNumberToObject(json, "event_count", touch_.event_count);
+    cJSON_AddNumberToObject(json, "last_event_age_ms", static_cast<double>(age_ms));
+    cJSON_AddBoolToObject(json, "recent", age_ms >= 0 && age_ms <= (kTouchFreshWindowUs / 1000));
     cJSON_AddStringToObject(json, "note", "Detailed touch gestures are handled by LVGL; this diagnostic reports board-level bring-up state.");
+    return json;
+}
+
+cJSON* MhaibotSensorHub::GetInteractionContextJson() {
+    MhaibotMotionSample motion_sample;
+    bool motion_ok = ReadMotion(motion_sample);
+    MhaibotMotionContext motion_context = InterpretMotion(motion_sample);
+
+    MhaibotRtcTime rtc_time;
+    bool rtc_ok = ReadRtcTime(rtc_time);
+
+    int64_t now_us = esp_timer_get_time();
+    int64_t touch_age_ms = touch_.last_event_us > 0 ? (now_us - touch_.last_event_us) / 1000 : -1;
+    bool recent_touch = touch_age_ms >= 0 && touch_age_ms <= (kTouchFreshWindowUs / 1000);
+
+    cJSON* json = cJSON_CreateObject();
+    cJSON_AddStringToObject(json, "schema", "mhaibot.sensor_interaction_context.v1");
+    cJSON_AddBoolToObject(json, "motion_valid", motion_ok && motion_context.valid);
+    cJSON_AddBoolToObject(json, "rtc_valid", rtc_ok);
+    cJSON_AddBoolToObject(json, "touch_recent", recent_touch);
+    AddEspError(json, "motion_status", motion_status_);
+    AddEspError(json, "rtc_status", rtc_status_);
+
+    cJSON* motion = cJSON_CreateObject();
+    cJSON_AddStringToObject(motion, "posture", motion_context.posture.c_str());
+    cJSON_AddStringToObject(motion, "primary_event", motion_context.primary_event.c_str());
+    cJSON_AddStringToObject(motion, "suggested_face", motion_context.suggested_face.c_str());
+    cJSON_AddBoolToObject(motion, "stable", motion_context.stable);
+    cJSON_AddBoolToObject(motion, "tilted", motion_context.tilted);
+    cJSON_AddBoolToObject(motion, "moving", motion_context.moving);
+    cJSON_AddBoolToObject(motion, "shake_like_motion", motion_context.shake_like_motion);
+    cJSON_AddBoolToObject(motion, "impact_like_motion", motion_context.impact_like_motion);
+    cJSON_AddBoolToObject(motion, "low_gravity", motion_context.low_gravity);
+    AddFloat(motion, "accel_magnitude_g", motion_context.accel_magnitude_g);
+    AddFloat(motion, "gyro_magnitude_dps", motion_context.gyro_magnitude_dps);
+    AddFloat(motion, "roll_deg", motion_context.roll_deg);
+    AddFloat(motion, "pitch_deg", motion_context.pitch_deg);
+    cJSON_AddItemToObject(json, "motion", motion);
+
+    cJSON* touch = cJSON_CreateObject();
+    cJSON_AddBoolToObject(touch, "initialized", touch_.initialized);
+    cJSON_AddBoolToObject(touch, "lvgl_registered", touch_.lvgl_registered);
+    cJSON_AddBoolToObject(touch, "recent", recent_touch);
+    cJSON_AddStringToObject(touch, "last_event", touch_.last_event.c_str());
+    cJSON_AddNumberToObject(touch, "event_count", touch_.event_count);
+    cJSON_AddNumberToObject(touch, "last_event_age_ms", static_cast<double>(touch_age_ms));
+    cJSON_AddItemToObject(json, "touch", touch);
+
+    cJSON* rtc = cJSON_CreateObject();
+    cJSON_AddBoolToObject(rtc, "valid", rtc_ok);
+    if (rtc_ok) {
+        cJSON_AddBoolToObject(rtc, "clock_integrity_ok", rtc_time.clock_integrity_ok);
+        cJSON_AddNumberToObject(rtc, "hour", rtc_time.hour);
+        cJSON_AddStringToObject(rtc, "time_bucket", TimeBucket(rtc_time.hour));
+    }
+    cJSON_AddItemToObject(json, "rtc", rtc);
+
+    cJSON_AddStringToObject(json, "behavior_boundary",
+                            "Read-only context for future behavior mapping; this call does not move servos or change the face.");
+    cJSON_AddStringToObject(json, "future_inputs", "PIR and camera can feed this schema later without changing MCP callers.");
     return json;
 }
